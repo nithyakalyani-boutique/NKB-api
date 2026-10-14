@@ -76,3 +76,4 @@ routes.push({method:'POST',path:'orders/access/request',summary:"Request private
 routes.push({method:'POST',path:'orders/access',summary:"Exchange one-use access code",schema:exchange,handler:async(c,b)=>orders.exchangeAccess(c,b)});
 routes.push({method:'GET',path:'me',summary:"Read my profile and capabilities",authenticated:true,handler:async c=>({user:await db.user.findUnique({where:{id:c.userId},select:{id:true,name:true,email:true,emailVerified:true,twoFactorEnabled:true}}),capabilities:c.capabilities})});
 routes.push({method:'PATCH',path:'me',summary:"Update profile display name",authenticated:true,schema:profile,handler:async(c,b)=>db.user.update({where:{id:c.userId},data:{name:String(b.name)},select:{id:true,name:true,email:true}})});
+routes.push({method:'GET',path:'me/addresses',summary:"Read my address book",authenticated:true,handler:async c=>page(await db.address.findMany({where:{userId:c.userId}}))});
