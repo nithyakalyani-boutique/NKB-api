@@ -61,3 +61,4 @@ routes.push({method:'DELETE',path:'cart/coupon',summary:"Remove selected promoti
 routes.push({method:'POST',path:'cart/merge',summary:"Resolve signed-in cart",authenticated:true,handler:async c=>cart.mergeCart(c)});
 routes.push({method:'POST',path:'checkout/quotes',summary:"Create immutable checkout quote",schema:quote,status:201,handler:async(c,b)=>checkout.createQuote(c,b)});
 routes.push({method:'GET',path:'checkout/quotes/:id',summary:"Read owned checkout quote",handler:async(c,_b,p)=>found(await db.checkoutSession.findFirst({where:{id:p.id,actor:c.actor}}))});
+routes.push({method:'POST',path:'checkout/orders',summary:"Reserve stock and place an order",schema:checkoutSchema,status:201,handler:async(c,b)=>checkout.placeOrder(c,b)});
