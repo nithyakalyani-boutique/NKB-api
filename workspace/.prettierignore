@@ -1,7 +1,8 @@
-node_modules
-.pnpm-store
-.next
-dist
-api/src/generated
-client/src/lib/api/schema.d.ts
-*.png
+**/node_modules/**
+**/generated/**
+**/schema.d.ts
+**/.next/**
+**/dist/**
+**/workspace/**
+**/test/evidence/**
+**/pnpm-lock.yaml
