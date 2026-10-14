@@ -18,5 +18,5 @@ server.all('/api/auth/{*path}',toNodeHandler(auth));
 server.use(express.json({limit:'256kb'}));server.use(express.urlencoded({extended:false,limit:'16kb'}));server.use(cookieParser());
 server.get('/health/live',(_req,res)=>res.json({status:'ok'}));
 server.get('/health/ready',async(_req,res)=>{try{await db.$queryRaw`SELECT 1`;res.json({status:'ready'});}catch{res.status(503).json({status:'unavailable'});}});
-const app=await NestFactory.create(AppModule,new ExpressAdapter(server),{bodyParser:false,logger:['error','warn']});app.enableShutdownHooks();await app.listen(env.PORT,'127.0.0.1');console.log('API ready at http://localhost:'+env.PORT);
+const app=await NestFactory.create(AppModule,new ExpressAdapter(server),{bodyParser:false,logger:['error','warn']});app.enableShutdownHooks();await app.listen(env.PORT,process.env.HOST||'127.0.0.1');console.log('API ready at http://localhost:'+env.PORT);
 for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,async()=>{await app.close();await db.$disconnect();process.exit(0);});
