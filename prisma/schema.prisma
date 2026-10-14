@@ -539,3 +539,15 @@ model StaffGrant {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model AuditEvent {
+ id String @id @default(uuid()) @db.Uuid
+ actor String
+ action String
+ resourceId String
+ detail Json
+ requestId String
+ @@index([createdAt])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
