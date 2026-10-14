@@ -592,3 +592,14 @@ model IdempotencyRecord {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model GuestChallenge {
+ id String @id @default(uuid()) @db.Uuid
+ orderId String? @db.Uuid
+ codeHash String
+ attempts Int @default(0)
+ expiresAt DateTime @db.Timestamptz
+ consumedAt DateTime? @db.Timestamptz
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
