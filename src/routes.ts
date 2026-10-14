@@ -53,3 +53,4 @@ routes.push({method:'GET',path:'collections/:slug',summary:"Read collection cont
 routes.push({method:'GET',path:'content',summary:"List published editorial content",handler:async ctx=>page(await db.contentPage.findMany({where:{status:'PUBLISHED',locale:'en',...(ctx.req.query.kind?{kind:String(ctx.req.query.kind)}:{})},take:100}))});
 routes.push({method:'GET',path:'content/:slug',summary:"Read published content",handler:async(_c,_b,p)=>found(await db.contentPage.findFirst({where:{slug:p.slug,status:'PUBLISHED',locale:'en'}}))});
 routes.push({method:'GET',path:'cart',summary:"Read current cart",handler:async ctx=>cart.getCart(ctx)});
+routes.push({method:'POST',path:'cart/items',summary:"Add a variant to the cart",schema:cartItem,handler:async(c,b)=>cart.changeCart(c,'add',b)});
