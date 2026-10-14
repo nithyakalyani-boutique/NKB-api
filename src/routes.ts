@@ -117,3 +117,4 @@ routes.push({method:'POST',path:'admin/orders/:id/notes',summary:"Add internal s
 routes.push({method:'POST',path:'admin/orders/:id/fulfillments',summary:"Allocate partial shipment",permission:'fulfillment.manage',schema:fulfillment,status:201,handler:async(c,b,p)=>ops.createShipment(c,p.id,b)});
 routes.push({method:'POST',path:'admin/fulfillments/:id/dispatch',summary:"Dispatch allocated shipment once",permission:'fulfillment.manage',handler:async(c,_b,p)=>ops.dispatch(c,p.id)});
 routes.push({method:'POST',path:'admin/orders/:id/refunds',summary:"Queue a finance-authorized refund",permission:'refunds.issue',schema:refund,status:202,handler:async(c,b,p)=>ops.requestRefund(c,p.id,b)});
+routes.push({method:'POST',path:'admin/return-requests/:id/decisions',summary:"Decide return or cancellation request",permission:'returns.manage',schema:decision,handler:async(c,b,p)=>ops.decideRequest(c,p.id,b)});
