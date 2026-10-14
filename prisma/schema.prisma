@@ -377,3 +377,16 @@ model Promotion {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Redemption {
+ id String @id @default(uuid()) @db.Uuid
+ promotionId String @db.Uuid
+ promotion Promotion @relation(fields:[promotionId],references:[id],onDelete:Restrict)
+ orderId String @unique @db.Uuid
+ actor String
+ state String @default("RESERVED")
+ expiresAt DateTime @db.Timestamptz
+ @@index([promotionId,state])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
