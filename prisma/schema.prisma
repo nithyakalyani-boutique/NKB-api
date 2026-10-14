@@ -621,3 +621,12 @@ model CustomerNote {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model OrderNote {
+ id String @id @default(uuid()) @db.Uuid
+ orderId String @db.Uuid
+ authorId String
+ body String
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
