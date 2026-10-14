@@ -68,3 +68,4 @@ routes.push({method:'GET',path:'orders',summary:"List my orders",authenticated:t
 routes.push({method:'GET',path:'orders/:id',summary:"Read authorized order snapshot",handler:async(c,_b,p)=>orders.orderView(c,p.id)});
 routes.push({method:'GET',path:'orders/:id/payment-status',summary:"Read independent financial and fulfillment states",handler:async(c,_b,p)=>{const o=await orders.ownedOrder(c,p.id);return {paymentSummary:o.paymentSummary,financialFlag:o.financialFlag,fulfillmentException:o.fulfillmentException,latestAttempt:o.attempts.at(-1)?.status,fulfillmentSummary:o.fulfillmentSummary};}});
 routes.push({method:'GET',path:'orders/:id/shipments',summary:"Read authorized shipment tracking",handler:async(c,_b,p)=>page((await orders.ownedOrder(c,p.id)).shipments)});
+routes.push({method:'POST',path:'orders/:id/payment-attempts',summary:"Safely retry an unpaid order",handler:async(c,_b,p)=>orders.retryPayment(c,p.id)});
