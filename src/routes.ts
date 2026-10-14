@@ -50,3 +50,4 @@ routes.push({method:'GET',path:'catalogue/facets',summary:"Read published search
 routes.push({method:'GET',path:'search/suggestions',summary:"Suggest published sarees",handler:async ctx=>String(ctx.req.query.q||'').length<2?page([]):catalogue.products({q:ctx.req.query.q,limit:6})});
 routes.push({method:'GET',path:'collections',summary:"List published collections",handler:async()=>page(await db.collection.findMany({where:{status:'PUBLISHED'},orderBy:{position:'asc'}}))});
 routes.push({method:'GET',path:'collections/:slug',summary:"Read collection content",handler:async(_c,_b,p)=>found(await db.collection.findFirst({where:{slug:p.slug,status:'PUBLISHED'}}))});
+routes.push({method:'GET',path:'content',summary:"List published editorial content",handler:async ctx=>page(await db.contentPage.findMany({where:{status:'PUBLISHED',locale:'en',...(ctx.req.query.kind?{kind:String(ctx.req.query.kind)}:{})},take:100}))});
