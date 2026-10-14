@@ -72,3 +72,4 @@ routes.push({method:'POST',path:'orders/:id/payment-attempts',summary:"Safely re
 routes.push({method:'POST',path:'orders/:id/cancellation-requests',summary:"Request cancellation",schema:request,status:201,handler:async(c,b,p)=>orders.serviceRequest(c,p.id,'CANCELLATION',b)});
 routes.push({method:'POST',path:'orders/:id/return-requests',summary:"Request return",schema:request,status:201,handler:async(c,b,p)=>orders.serviceRequest(c,p.id,'RETURN',b)});
 routes.push({method:'GET',path:'return-requests/:id',summary:"Read authorized request progress",handler:async(c,_b,p)=>{const r=found(await db.serviceRequest.findUnique({where:{id:p.id}}));await orders.ownedOrder(c,r.orderId);return r;}});
+routes.push({method:'POST',path:'orders/access/request',summary:"Request private order access code",schema:recovery,status:202,handler:async(_c,b)=>orders.requestAccess(b)});
