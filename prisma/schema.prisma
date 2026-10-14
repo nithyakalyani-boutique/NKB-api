@@ -443,3 +443,16 @@ model PurchaseLine {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model GoodsReceipt {
+ id String @id @default(uuid()) @db.Uuid
+ purchaseId String @db.Uuid
+ purchase PurchaseOrder @relation(fields:[purchaseId],references:[id],onDelete:Restrict)
+ operationKey String @unique
+ fxRate String
+ chargesMinor BigInt
+ costStatus String @default("FINALIZED")
+ lines ReceiptLine[]
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
