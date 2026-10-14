@@ -46,3 +46,4 @@ routes.push({method:'GET',path:'store-config',summary:"Read public store configu
 routes.push({method:'GET',path:'products',summary:"Search published sarees",handler:async ctx=>catalogue.products(ctx.req.query)});
 routes.push({method:'GET',path:'products/:slug',summary:"Read a published saree",handler:async(_c,_b,p)=>catalogue.product(p.slug)});
 routes.push({method:'GET',path:'products/:id/related',summary:"Find related published sarees",handler:async(_c,_b,p)=>{const product=found(await db.product.findFirst({where:{id:p.id,status:'ACTIVE'}}));return catalogue.products({fabric:product.fabric,limit:4});}});
+routes.push({method:'GET',path:'catalogue/facets',summary:"Read published search facets",handler:async()=>catalogue.facets()});
