@@ -73,3 +73,4 @@ routes.push({method:'POST',path:'orders/:id/cancellation-requests',summary:"Requ
 routes.push({method:'POST',path:'orders/:id/return-requests',summary:"Request return",schema:request,status:201,handler:async(c,b,p)=>orders.serviceRequest(c,p.id,'RETURN',b)});
 routes.push({method:'GET',path:'return-requests/:id',summary:"Read authorized request progress",handler:async(c,_b,p)=>{const r=found(await db.serviceRequest.findUnique({where:{id:p.id}}));await orders.ownedOrder(c,r.orderId);return r;}});
 routes.push({method:'POST',path:'orders/access/request',summary:"Request private order access code",schema:recovery,status:202,handler:async(_c,b)=>orders.requestAccess(b)});
+routes.push({method:'POST',path:'orders/access',summary:"Exchange one-use access code",schema:exchange,handler:async(c,b)=>orders.exchangeAccess(c,b)});
