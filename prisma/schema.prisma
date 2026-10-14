@@ -284,3 +284,19 @@ model PaymentTransaction {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Refund {
+ id String @id @default(uuid()) @db.Uuid
+ orderId String @db.Uuid
+ order Order @relation(fields:[orderId],references:[id],onDelete:Restrict)
+ attemptId String @db.Uuid
+ amountMinor BigInt
+ currency String
+ status String @default("REQUESTED")
+ reason String
+ operationKey String @unique
+ allocations Json
+ providerReference String? @unique
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
