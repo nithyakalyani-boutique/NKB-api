@@ -137,3 +137,15 @@ model Cart {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model CartItem {
+ id String @id @default(uuid()) @db.Uuid
+ cartId String @db.Uuid
+ cart Cart @relation(fields:[cartId],references:[id],onDelete:Restrict)
+ variantId String @db.Uuid
+ variant Variant @relation(fields:[variantId],references:[id],onDelete:Restrict)
+ quantity Int
+ @@unique([cartId,variantId])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
