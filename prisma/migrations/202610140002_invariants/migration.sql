@@ -7,3 +7,4 @@ ALTER TABLE "Order" ADD CONSTRAINT order_total CHECK ("totalMinor"="subtotalMino
 ALTER TABLE "OrderLine" ADD CONSTRAINT order_line_bounds CHECK (quantity>0 AND dispatched>=0 AND cancelled>=0 AND returned>=0 AND dispatched+cancelled<=quantity AND returned<=dispatched AND "netMinor"="unitPriceMinor"*quantity-"discountMinor");
 ALTER TABLE "PurchaseLine" ADD CONSTRAINT purchase_quantity CHECK(quantity>0 AND received>=0 AND received<=quantity AND "unitCostMinor">=0);
 ALTER TABLE "Review" ADD CONSTRAINT review_rating CHECK(rating BETWEEN 1 AND 5);
+CREATE UNIQUE INDEX one_default_address ON "Address" ("userId") WHERE "isDefault";
