@@ -94,3 +94,4 @@ routes.push({method:'GET',path:'admin/orders',summary:"Inspect orders",permissio
 routes.push({method:'GET',path:'admin/customers',summary:"Inspect customers",permission:'customers.support',handler:async()=>page(await db.user.findMany({select:{id:true,name:true,email:true,emailVerified:true,createdAt:true},take:100}))});
 routes.push({method:'GET',path:'admin/discounts',summary:"Inspect discounts",permission:'promotions.manage',handler:async()=>page(await db.promotion.findMany({take:100}))});
 routes.push({method:'GET',path:'admin/shipping-methods',summary:"Inspect shipping-methods",permission:'settings.manage',handler:async()=>page(await db.shippingMethod.findMany({take:100}))});
+routes.push({method:'GET',path:'admin/returns',summary:"Inspect returns",permission:'returns.manage',handler:async()=>page(await db.serviceRequest.findMany({include:{order:{select:{reference:true}}},take:100,orderBy:{createdAt:'desc'}}))});
