@@ -12,3 +12,4 @@ ALTER TABLE "StaffGrant" ADD CONSTRAINT staff_user_fk FOREIGN KEY ("userId") REF
 ALTER TABLE "Address" ADD CONSTRAINT address_user_fk FOREIGN KEY ("userId") REFERENCES "user" (id) ON DELETE RESTRICT;
 ALTER TABLE "WishlistItem" ADD CONSTRAINT wishlist_user_fk FOREIGN KEY ("userId") REFERENCES "user" (id) ON DELETE RESTRICT;
 ALTER TABLE "WishlistItem" ADD CONSTRAINT wishlist_product_fk FOREIGN KEY ("productId") REFERENCES "Product" (id) ON DELETE RESTRICT;
+CREATE INDEX product_search_idx ON "Product" USING gin(to_tsvector('simple', title || ' ' || description || ' ' || fabric));
