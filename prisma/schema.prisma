@@ -567,3 +567,15 @@ model OutboxEvent {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Notification {
+ id String @id @default(uuid()) @db.Uuid
+ eventId String @unique
+ recipient String
+ subject String
+ body String
+ status String @default("PENDING")
+ providerId String?
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
