@@ -1,4 +1,4 @@
-import {db,transaction,dataJson,type Tx} from '../database/db.js';
+import {transaction,dataJson,type Tx} from '../database/db.js';
 import type {Context} from '../common/context.js';
 import {found,requireThat} from '../common/problem.js';
 import {audit,event} from '../common/audit.js';
