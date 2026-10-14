@@ -13,7 +13,7 @@ export async function finishRefund(id:string,result:RefundResult,actor='worker',
   if(result.status==='SUCCEEDED'){
    const existing=await tx.paymentTransaction.findUnique({where:{providerReference:result.reference}});
    requireThat(!existing,'REFUND_REFERENCE_REUSED','Provider reference is already recorded.',409);
-   const capture=found(await tx.paymentTransaction.findFirst({where:{orderId:refund.orderId,attemptId:refund.attemptId,kind:'CAPTURE'}}));
+   const capture=found(await tx.paymentTransaction.findFirst({where:{orderId:refund.orderId,attemptId:refund.attemptId,kind:'CAPTURE',...(refund.captureId?{id:refund.captureId}:{})}}));
    await tx.paymentTransaction.create({data:{orderId:refund.orderId,attemptId:refund.attemptId,kind:'REFUND',amountMinor:refund.amountMinor,currency:refund.currency,providerReference:result.reference,originalId:capture.id}});
    const facts=await tx.paymentTransaction.findMany({where:{orderId:refund.orderId}});
    const captures=facts.filter(f=>f.kind==='CAPTURE').reduce((s,f)=>s+f.amountMinor,0n);
@@ -36,7 +36,7 @@ export async function executeRefund(id:string){
   if(['SUCCEEDED','FAILED'].includes(refund.status))return null;
   // An interrupted attempt is reconciled; it is never sent to the provider again.
   if(refund.status!=='REQUESTED')return {refund,reconcile:true,paymentId:''};
-  const capture=found(await tx.paymentTransaction.findFirst({where:{orderId:refund.orderId,attemptId:refund.attemptId,kind:'CAPTURE'}}));
+  const capture=found(await tx.paymentTransaction.findFirst({where:{orderId:refund.orderId,attemptId:refund.attemptId,kind:'CAPTURE',...(refund.captureId?{id:refund.captureId}:{})}}));
   await tx.refund.update({where:{id},data:{status:'SUBMITTED'}});
   return {refund,reconcile:false,paymentId:capture.providerReference.replace(/^payhere:capture:/,'')};
  });
