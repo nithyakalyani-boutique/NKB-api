@@ -74,3 +74,4 @@ routes.push({method:'POST',path:'orders/:id/return-requests',summary:"Request re
 routes.push({method:'GET',path:'return-requests/:id',summary:"Read authorized request progress",handler:async(c,_b,p)=>{const r=found(await db.serviceRequest.findUnique({where:{id:p.id}}));await orders.ownedOrder(c,r.orderId);return r;}});
 routes.push({method:'POST',path:'orders/access/request',summary:"Request private order access code",schema:recovery,status:202,handler:async(_c,b)=>orders.requestAccess(b)});
 routes.push({method:'POST',path:'orders/access',summary:"Exchange one-use access code",schema:exchange,handler:async(c,b)=>orders.exchangeAccess(c,b)});
+routes.push({method:'GET',path:'me',summary:"Read my profile and capabilities",authenticated:true,handler:async c=>({user:await db.user.findUnique({where:{id:c.userId},select:{id:true,name:true,email:true,emailVerified:true,twoFactorEnabled:true}}),capabilities:c.capabilities})});
