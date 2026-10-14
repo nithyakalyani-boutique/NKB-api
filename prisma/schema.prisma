@@ -300,3 +300,17 @@ model Refund {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model ReconciliationIssue {
+ id String @id @default(uuid()) @db.Uuid
+ orderId String @db.Uuid
+ attemptId String? @db.Uuid
+ code String
+ requiredRefundMinor BigInt?
+ state String @default("OPEN")
+ evidence Json
+ dueAt DateTime @db.Timestamptz
+ @@index([state,dueAt])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
