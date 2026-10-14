@@ -473,3 +473,16 @@ model ReceiptLine {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model ContentPage {
+ id String @id @default(uuid()) @db.Uuid
+ slug String @unique
+ title String
+ kind String
+ body String
+ status String @default("DRAFT")
+ locale String @default("en")
+ version Int @default(1)
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
