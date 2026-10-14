@@ -404,3 +404,15 @@ model ShippingMethod {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Supplier {
+ id String @id @default(uuid()) @db.Uuid
+ name String
+ country String @default("IN")
+ currency String @default("INR")
+ email String?
+ archived Boolean @default(false)
+ purchases PurchaseOrder[]
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
