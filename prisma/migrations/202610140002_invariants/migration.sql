@@ -6,3 +6,4 @@ ALTER TABLE "Variant" ADD CONSTRAINT variant_price CHECK ("priceMinor">=0 AND "w
 ALTER TABLE "Order" ADD CONSTRAINT order_total CHECK ("totalMinor"="subtotalMinor"-"discountMinor"+"shippingMinor"+"taxMinor" AND "totalMinor">=0 AND "discountMinor">=0 AND "discountMinor"<="subtotalMinor");
 ALTER TABLE "OrderLine" ADD CONSTRAINT order_line_bounds CHECK (quantity>0 AND dispatched>=0 AND cancelled>=0 AND returned>=0 AND dispatched+cancelled<=quantity AND returned<=dispatched AND "netMinor"="unitPriceMinor"*quantity-"discountMinor");
 ALTER TABLE "PurchaseLine" ADD CONSTRAINT purchase_quantity CHECK(quantity>0 AND received>=0 AND received<=quantity AND "unitCostMinor">=0);
+ALTER TABLE "Review" ADD CONSTRAINT review_rating CHECK(rating BETWEEN 1 AND 5);
