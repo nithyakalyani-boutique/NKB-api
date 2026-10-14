@@ -56,3 +56,4 @@ routes.push({method:'GET',path:'cart',summary:"Read current cart",handler:async 
 routes.push({method:'POST',path:'cart/items',summary:"Add a variant to the cart",schema:cartItem,handler:async(c,b)=>cart.changeCart(c,'add',b)});
 routes.push({method:'PATCH',path:'cart/items/:id',summary:"Update cart quantity",schema:cartQuantity,handler:async(c,b,p)=>cart.changeCart(c,'quantity',b,p.id)});
 routes.push({method:'DELETE',path:'cart/items/:id',summary:"Remove cart line",handler:async(c,b,p)=>cart.changeCart(c,'delete',b,p.id)});
+routes.push({method:'POST',path:'cart/coupon',summary:"Select a promotion code",schema:coupon,handler:async(c,b)=>cart.changeCart(c,'coupon',b)});
