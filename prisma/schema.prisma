@@ -165,3 +165,40 @@ model CheckoutSession {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Order {
+ id String @id @default(uuid()) @db.Uuid
+ reference String @unique
+ cartId String @unique @db.Uuid
+ cart Cart @relation(fields:[cartId],references:[id],onDelete:Restrict)
+ checkoutId String @unique @db.Uuid
+ checkout CheckoutSession @relation(fields:[checkoutId],references:[id],onDelete:Restrict)
+ actor String
+ userId String?
+ email String
+ address Json
+ billingAddress Json
+ currency String @default("LKR")
+ exponent Int @default(2)
+ subtotalMinor BigInt
+ discountMinor BigInt
+ shippingMinor BigInt
+ taxMinor BigInt
+ totalMinor BigInt
+ snapshot Json
+ status String @default("PENDING_PAYMENT")
+ paymentSummary String @default("UNPAID")
+ fulfillmentSummary String @default("UNFULFILLED")
+ financialFlag String @default("NONE")
+ fulfillmentException String?
+ lines OrderLine[]
+ attempts PaymentAttempt[]
+ transactions PaymentTransaction[]
+ shipments Shipment[]
+ refunds Refund[]
+ requests ServiceRequest[]
+ @@index([actor,createdAt])
+ @@index([userId,createdAt])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
