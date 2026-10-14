@@ -1,0 +1,31 @@
+{
+  "name": "nithyakalyani-boutique",
+  "private": true,
+  "packageManager": "pnpm@10.34.7",
+  "engines": {
+    "node": "24.20.0"
+  },
+  "scripts": {
+    "infra:up": "docker compose up -d postgres redis mailpit",
+    "infra:local": "node scripts/local-postgres.mjs",
+    "env:check": "pnpm --filter @nkb/api env:check",
+    "db:generate": "pnpm --filter @nkb/api db:generate",
+    "db:migrate": "pnpm --filter @nkb/api db:migrate",
+    "db:seed": "pnpm --filter @nkb/api db:seed",
+    "admin:create": "pnpm --filter @nkb/api admin:create",
+    "dev": "node scripts/dev.mjs",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "test:integration": "pnpm --filter @nkb/api test:integration",
+    "test:e2e": "pnpm --filter @nkb/client test:e2e",
+    "api:export": "pnpm --filter @nkb/api api:export",
+    "api:generate-client": "pnpm --filter @nkb/client api:generate"
+  },
+  "devDependencies": {
+    "pnpm": "10.34.7",
+    "embedded-postgres": "18.4.0-beta.17",
+    "concurrently": "9.2.1"
+  }
+}
