@@ -101,3 +101,4 @@ routes.push({method:'GET',path:'admin/audit-events',summary:"Inspect audit-event
 routes.push({method:'GET',path:'admin/reviews',summary:"Inspect reviews",permission:'content.publish',handler:async()=>page(await db.review.findMany({take:100}))});
 routes.push({method:'GET',path:'admin/settings',summary:"Inspect settings",permission:'settings.manage',handler:async()=>page(await db.storeSetting.findMany({take:100}))});
 routes.push({method:'GET',path:'admin/reconciliation',summary:"Inspect reconciliation",permission:'finance.read',handler:async()=>page(await db.reconciliationIssue.findMany({take:100,orderBy:{createdAt:'desc'}}))});
+routes.push({method:'GET',path:'admin/jobs',summary:"Inspect jobs",permission:'settings.manage',handler:async()=>page(await db.outboxEvent.findMany({select:{id:true,kind:true,attempts:true,processedAt:true,lastError:true,createdAt:true},take:100,orderBy:{createdAt:'desc'}}))});
