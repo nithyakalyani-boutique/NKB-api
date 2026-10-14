@@ -314,3 +314,19 @@ model ReconciliationIssue {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Shipment {
+ id String @id @default(uuid()) @db.Uuid
+ orderId String @db.Uuid
+ order Order @relation(fields:[orderId],references:[id],onDelete:Restrict)
+ carrier String
+ trackingNumber String
+ status String @default("READY")
+ operationKey String @unique
+ costMinor BigInt?
+ currency String @default("LKR")
+ dispatchedAt DateTime? @db.Timestamptz
+ items ShipmentItem[]
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
