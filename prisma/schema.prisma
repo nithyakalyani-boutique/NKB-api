@@ -6,3 +6,30 @@ generator client {
 datasource db {
  provider = "postgresql"
 }
+
+model Product {
+ id String @id @default(uuid()) @db.Uuid
+ slug String @unique
+ title String
+ description String
+ status String @default("DRAFT")
+ fabric String
+ weave String @default("")
+ colour String
+ occasion String
+ origin String @default("IN")
+ care String
+ lengthMm Int
+ widthMm Int
+ blouseIncluded Boolean @default(false)
+ demo Boolean @default(true)
+ version Int @default(1)
+ images Json @default("[]")
+ publishedAt DateTime? @db.Timestamptz
+ variants Variant[]
+ collections CollectionProduct[]
+ reviews Review[]
+ @@index([status, publishedAt])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
