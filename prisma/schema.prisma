@@ -105,3 +105,19 @@ model InventoryBalance {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model InventoryMovement {
+ id String @id @default(uuid()) @db.Uuid
+ variantId String @db.Uuid
+ variant Variant @relation(fields:[variantId],references:[id],onDelete:Restrict)
+ warehouseId String @db.Uuid
+ onHandDelta Int
+ reservedDelta Int
+ kind String
+ sourceId String
+ dedupeKey String @unique
+ reason String
+ actor String
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
