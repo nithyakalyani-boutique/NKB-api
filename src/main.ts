@@ -15,6 +15,7 @@ server.set('json replacer',(_k:string,v:unknown)=>typeof v==='bigint'?v.toString
 server.use(helmet());
 server.use((_req,res,next)=>{res.setHeader('X-Request-ID',crypto.randomUUID());next();});
 server.all('/api/auth/{*path}',toNodeHandler(auth));
+server.use('/api/v1/admin/media/:id/upload',express.raw({type:['image/png','image/jpeg','image/webp'],limit:'5mb'}));
 server.use(express.json({limit:'256kb'}));server.use(express.urlencoded({extended:false,limit:'16kb'}));server.use(cookieParser());
 server.get('/health/live',(_req,res)=>res.json({status:'ok'}));
 server.get('/health/ready',async(_req,res)=>{try{await db.$queryRaw`SELECT 1`;res.json({status:'ready'});}catch{res.status(503).json({status:'unavailable'});}});
