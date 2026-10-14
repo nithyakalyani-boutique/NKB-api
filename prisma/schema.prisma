@@ -81,3 +81,13 @@ model CollectionProduct {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Warehouse {
+ id String @id @default(uuid()) @db.Uuid
+ code String @unique
+ name String
+ active Boolean @default(true)
+ balances InventoryBalance[]
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
