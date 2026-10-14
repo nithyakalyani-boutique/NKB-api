@@ -21,11 +21,14 @@
     "test:integration": "pnpm --filter @nkb/api test:integration",
     "test:e2e": "pnpm --filter @nkb/client test:e2e",
     "api:export": "pnpm --filter @nkb/api api:export",
-    "api:generate-client": "pnpm --filter @nkb/client api:generate"
+    "api:generate-client": "pnpm --filter @nkb/client api:generate",
+    "local": "node scripts/local-start.mjs",
+    "format": "prettier --write api/src api/test api/scripts api/prisma client/src client/test"
   },
   "devDependencies": {
     "pnpm": "10.34.7",
     "embedded-postgres": "18.4.0-beta.17",
-    "concurrently": "9.2.1"
+    "concurrently": "9.2.1",
+    "prettier": "3.6.2"
   }
 }
