@@ -41,3 +41,4 @@ import {addressBook} from './contracts/addressBook.js';
 import {collection} from './contracts/collection.js';
 export const routes:Route[]=[];
 const page=(items:unknown[])=>({items,pageInfo:{nextCursor:null,hasNextPage:false}});
+routes.push({method:'GET',path:'csrf',summary:"Get actor-bound CSRF token",handler:async ctx=>({token:csrf(ctx.actor)})});
