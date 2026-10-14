@@ -56,3 +56,16 @@ model Variant {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Collection {
+ id String @id @default(uuid()) @db.Uuid
+ slug String @unique
+ title String
+ description String
+ image String
+ status String @default("DRAFT")
+ position Int @default(0)
+ products CollectionProduct[]
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
