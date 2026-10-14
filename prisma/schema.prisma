@@ -121,3 +121,19 @@ model InventoryMovement {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Cart {
+ id String @id @default(uuid()) @db.Uuid
+ actor String
+ userId String?
+ currency String @default("LKR")
+ status String @default("ACTIVE")
+ version Int @default(1)
+ coupon String?
+ items CartItem[]
+ quotes CheckoutSession[]
+ order Order?
+ @@index([actor,status])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
