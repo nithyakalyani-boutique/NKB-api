@@ -42,3 +42,4 @@ import {collection} from './contracts/collection.js';
 export const routes:Route[]=[];
 const page=(items:unknown[])=>({items,pageInfo:{nextCursor:null,hasNextPage:false}});
 routes.push({method:'GET',path:'csrf',summary:"Get actor-bound CSRF token",handler:async ctx=>({token:csrf(ctx.actor)})});
+routes.push({method:'GET',path:'store-config',summary:"Read public store configuration",handler:async()=>({name:'NITHYAKALYANI BOUTIQUE',demo:env.APP_ENV!=='production',locales:['en'],currencies:['LKR'],termsVersion:'draft-v1',shippingCountries:[...new Set((await db.shippingMethod.findMany({where:{enabled:true}})).flatMap(s=>s.countries))],contact:(await db.storeSetting.findUnique({where:{key:'contact'}}))?.value||null})});
