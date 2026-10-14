@@ -1,0 +1,6 @@
+import {requireThat} from './problem.js';
+export const money=(amount:bigint|string)=>({amountMinor:String(amount),currency:'LKR',exponent:2});
+export function minor(decimal:string):bigint{requireThat(/^\d+(\.\d{1,2})?$/.test(decimal),'INVALID_AMOUNT','Expected a nonnegative amount with at most two decimals.');const [a,b='']=decimal.split('.');return BigInt(a)*100n+BigInt(b.padEnd(2,'0'));}
+export function decimal(amount:bigint):string{return (amount/100n).toString()+'.'+(amount%100n).toString().padStart(2,'0');}
+export function allocate(total:bigint,weights:bigint[]):bigint[]{const sum=weights.reduce((a,b)=>a+b,0n);requireThat(sum>0n&&total>=0n,'INVALID_ALLOCATION','Allocation requires positive weights.');const parts=weights.map(w=>total*w/sum);let remainder=total-parts.reduce((a,b)=>a+b,0n);for(let i=0;remainder>0n;i++,remainder--)parts[i%parts.length]+=1n;return parts;}
+export function fx(amount:bigint,rate:string):bigint{requireThat(/^\d+(\.\d{1,12})?$/.test(rate),'INVALID_FX','Provide a positive decimal exchange rate.');const [a,b='']=rate.split('.');const divisor=10n**BigInt(b.length);const multiplier=BigInt(a+b);requireThat(multiplier>0n,'INVALID_FX','Rate must be positive.');return (amount*multiplier+divisor/2n)/divisor;}
