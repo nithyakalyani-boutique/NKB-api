@@ -5,3 +5,4 @@ CREATE UNIQUE INDEX one_active_cart_per_actor ON "Cart" (actor) WHERE status='AC
 ALTER TABLE "Variant" ADD CONSTRAINT variant_price CHECK ("priceMinor">=0 AND "weightG">0 AND currency='LKR' AND exponent=2);
 ALTER TABLE "Order" ADD CONSTRAINT order_total CHECK ("totalMinor"="subtotalMinor"-"discountMinor"+"shippingMinor"+"taxMinor" AND "totalMinor">=0 AND "discountMinor">=0 AND "discountMinor"<="subtotalMinor");
 ALTER TABLE "OrderLine" ADD CONSTRAINT order_line_bounds CHECK (quantity>0 AND dispatched>=0 AND cancelled>=0 AND returned>=0 AND dispatched+cancelled<=quantity AND returned<=dispatched AND "netMinor"="unitPriceMinor"*quantity-"discountMinor");
+ALTER TABLE "PurchaseLine" ADD CONSTRAINT purchase_quantity CHECK(quantity>0 AND received>=0 AND received<=quantity AND "unitCostMinor">=0);
