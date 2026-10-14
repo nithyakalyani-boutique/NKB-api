@@ -8,3 +8,7 @@ ALTER TABLE "OrderLine" ADD CONSTRAINT order_line_bounds CHECK (quantity>0 AND d
 ALTER TABLE "PurchaseLine" ADD CONSTRAINT purchase_quantity CHECK(quantity>0 AND received>=0 AND received<=quantity AND "unitCostMinor">=0);
 ALTER TABLE "Review" ADD CONSTRAINT review_rating CHECK(rating BETWEEN 1 AND 5);
 CREATE UNIQUE INDEX one_default_address ON "Address" ("userId") WHERE "isDefault";
+ALTER TABLE "StaffGrant" ADD CONSTRAINT staff_user_fk FOREIGN KEY ("userId") REFERENCES "user" (id) ON DELETE RESTRICT;
+ALTER TABLE "Address" ADD CONSTRAINT address_user_fk FOREIGN KEY ("userId") REFERENCES "user" (id) ON DELETE RESTRICT;
+ALTER TABLE "WishlistItem" ADD CONSTRAINT wishlist_user_fk FOREIGN KEY ("userId") REFERENCES "user" (id) ON DELETE RESTRICT;
+ALTER TABLE "WishlistItem" ADD CONSTRAINT wishlist_product_fk FOREIGN KEY ("productId") REFERENCES "Product" (id) ON DELETE RESTRICT;
