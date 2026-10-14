@@ -33,3 +33,26 @@ model Product {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Variant {
+ id String @id @default(uuid()) @db.Uuid
+ productId String @db.Uuid
+ product Product @relation(fields:[productId], references:[id], onDelete:Restrict)
+ sku String @unique
+ title String
+ optionSignature String
+ active Boolean @default(true)
+ weightG Int
+ priceMinor BigInt
+ currency String @default("LKR")
+ exponent Int @default(2)
+ version Int @default(1)
+ balances InventoryBalance[]
+ movements InventoryMovement[]
+ cartItems CartItem[]
+ orderLines OrderLine[]
+ purchaseLines PurchaseLine[]
+ @@unique([productId, optionSignature])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
