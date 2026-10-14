@@ -268,3 +268,19 @@ model PaymentEvent {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model PaymentTransaction {
+ id String @id @default(uuid()) @db.Uuid
+ orderId String @db.Uuid
+ order Order @relation(fields:[orderId],references:[id],onDelete:Restrict)
+ attemptId String @db.Uuid
+ attempt PaymentAttempt @relation(fields:[attemptId],references:[id],onDelete:Restrict)
+ kind String
+ amountMinor BigInt
+ currency String
+ providerReference String @unique
+ originalId String?
+ @@index([orderId,kind])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
