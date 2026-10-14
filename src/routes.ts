@@ -87,3 +87,4 @@ routes.push({method:'POST',path:'reviews',summary:"Submit verified purchaser rev
 routes.push({method:'GET',path:'admin/products',summary:"Inspect products",permission:'catalog.read',handler:async()=>page(await db.product.findMany({include:{variants:true},take:100,orderBy:{updatedAt:'desc'}}))});
 routes.push({method:'GET',path:'admin/collections',summary:"Inspect collections",permission:'content.write',handler:async()=>page(await db.collection.findMany({include:{products:true},take:100}))});
 routes.push({method:'GET',path:'admin/inventory',summary:"Inspect inventory",permission:'inventory.read',handler:async()=>page(await db.inventoryBalance.findMany({include:{variant:{include:{product:true}},warehouse:true},take:100}))});
+routes.push({method:'GET',path:'admin/inventory/movements',summary:"Inspect inventory/movements",permission:'inventory.read',handler:async()=>page(await db.inventoryMovement.findMany({take:100,orderBy:{createdAt:'desc'}}))});
