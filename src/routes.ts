@@ -100,3 +100,4 @@ routes.push({method:'GET',path:'admin/staff',summary:"Inspect staff",permission:
 routes.push({method:'GET',path:'admin/audit-events',summary:"Inspect audit-events",permission:'audit.read',handler:async()=>page(await db.auditEvent.findMany({take:100,orderBy:{createdAt:'desc'}}))});
 routes.push({method:'GET',path:'admin/reviews',summary:"Inspect reviews",permission:'content.publish',handler:async()=>page(await db.review.findMany({take:100}))});
 routes.push({method:'GET',path:'admin/settings',summary:"Inspect settings",permission:'settings.manage',handler:async()=>page(await db.storeSetting.findMany({take:100}))});
+routes.push({method:'GET',path:'admin/reconciliation',summary:"Inspect reconciliation",permission:'finance.read',handler:async()=>page(await db.reconciliationIssue.findMany({take:100,orderBy:{createdAt:'desc'}}))});
