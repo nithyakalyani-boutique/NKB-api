@@ -242,3 +242,17 @@ model Reservation {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model PaymentAttempt {
+ id String @id @default(uuid()) @db.Uuid
+ orderId String @db.Uuid
+ order Order @relation(fields:[orderId],references:[id],onDelete:Restrict)
+ provider String
+ merchantReference String @unique
+ amountMinor BigInt
+ currency String
+ status String @default("PENDING")
+ transactions PaymentTransaction[]
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
