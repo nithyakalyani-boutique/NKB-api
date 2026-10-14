@@ -1,0 +1,7 @@
+node_modules
+.pnpm-store
+.next
+dist
+api/src/generated
+client/src/lib/api/schema.d.ts
+*.png
