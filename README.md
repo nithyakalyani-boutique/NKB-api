@@ -1,9 +1,9 @@
-# API — Backend and Worker
+# Nithyakalyani Boutique API
 
-This directory is reserved for the custom NestJS backend and background worker described in [PROJECT.md](../PROJECT.md).
+NestJS 12 / Express 5, strict TypeScript ESM, Prisma 7/PostgreSQL, Better Auth, durable outbox and BullMQ worker. Business routes: /api/v1. Authentication: /api/auth. Health probes: /health/live and /health/ready.
 
-Implement the catalogue, pricing, inventory, purchasing, orders, payments, shipping, refunds, customers, staff permissions, content, and notifications here. PostgreSQL is the source of truth; Prisma schema and migrations belong in `api/prisma/`.
+From the parent workspace: pnpm db:generate, pnpm db:migrate, pnpm db:seed, pnpm --filter @nkb/api dev. Local standalone worker: set WORKER_TRANSPORT=postgres, then pnpm --filter @nkb/api worker. Production requires BullMQ/Redis.
 
-Business endpoints use `/api/v1/*`; the API owns Better Auth at `/api/auth/*`. All sensitive operations require backend authorization. The frontend must not own commerce persistence or payment confirmation logic.
+Tests: pnpm test and pnpm test:integration. Integration tests require a database name ending in _test and do not reset development data. Review workspace/docs/SETUP.md and workspace/docs/IMPLEMENTATION_STATUS.md for exact evidence and limitations.
 
-This handoff contains specifications only. Do not treat this directory as an already configured NestJS application.
+Root workspace files are versioned in workspace/ because API and client have separate Git repositories. To reconstruct a parent workspace from this checkout, use scripts/restore-workspace.mjs from this directory; it copies missing files only.
