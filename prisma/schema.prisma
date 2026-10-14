@@ -202,3 +202,26 @@ model Order {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model OrderLine {
+ id String @id @default(uuid()) @db.Uuid
+ orderId String @db.Uuid
+ order Order @relation(fields:[orderId],references:[id],onDelete:Restrict)
+ variantId String @db.Uuid
+ variant Variant @relation(fields:[variantId],references:[id],onDelete:Restrict)
+ title String
+ sku String
+ image String
+ quantity Int
+ unitPriceMinor BigInt
+ discountMinor BigInt
+ netMinor BigInt
+ dispatched Int @default(0)
+ cancelled Int @default(0)
+ returned Int @default(0)
+ costSnapshot Json
+ reservations Reservation[]
+ shipmentItems ShipmentItem[]
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
