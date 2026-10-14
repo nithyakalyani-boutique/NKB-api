@@ -69,3 +69,15 @@ model Collection {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model CollectionProduct {
+ id String @id @default(uuid()) @db.Uuid
+ collectionId String @db.Uuid
+ productId String @db.Uuid
+ collection Collection @relation(fields:[collectionId],references:[id],onDelete:Restrict)
+ product Product @relation(fields:[productId],references:[id],onDelete:Restrict)
+ position Int @default(0)
+ @@unique([collectionId,productId])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
