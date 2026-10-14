@@ -70,3 +70,4 @@ routes.push({method:'GET',path:'orders/:id/payment-status',summary:"Read indepen
 routes.push({method:'GET',path:'orders/:id/shipments',summary:"Read authorized shipment tracking",handler:async(c,_b,p)=>page((await orders.ownedOrder(c,p.id)).shipments)});
 routes.push({method:'POST',path:'orders/:id/payment-attempts',summary:"Safely retry an unpaid order",handler:async(c,_b,p)=>orders.retryPayment(c,p.id)});
 routes.push({method:'POST',path:'orders/:id/cancellation-requests',summary:"Request cancellation",schema:request,status:201,handler:async(c,b,p)=>orders.serviceRequest(c,p.id,'CANCELLATION',b)});
+routes.push({method:'POST',path:'orders/:id/return-requests',summary:"Request return",schema:request,status:201,handler:async(c,b,p)=>orders.serviceRequest(c,p.id,'RETURN',b)});
