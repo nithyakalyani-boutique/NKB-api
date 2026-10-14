@@ -551,3 +551,19 @@ model AuditEvent {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model OutboxEvent {
+ id String @id @default(uuid()) @db.Uuid
+ kind String
+ aggregateId String
+ payload Json
+ dedupeKey String @unique
+ attempts Int @default(0)
+ availableAt DateTime @default(now()) @db.Timestamptz
+ leaseUntil DateTime? @db.Timestamptz
+ processedAt DateTime? @db.Timestamptz
+ lastError String?
+ @@index([processedAt,availableAt])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
