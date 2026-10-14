@@ -88,3 +88,4 @@ routes.push({method:'GET',path:'admin/products',summary:"Inspect products",permi
 routes.push({method:'GET',path:'admin/collections',summary:"Inspect collections",permission:'content.write',handler:async()=>page(await db.collection.findMany({include:{products:true},take:100}))});
 routes.push({method:'GET',path:'admin/inventory',summary:"Inspect inventory",permission:'inventory.read',handler:async()=>page(await db.inventoryBalance.findMany({include:{variant:{include:{product:true}},warehouse:true},take:100}))});
 routes.push({method:'GET',path:'admin/inventory/movements',summary:"Inspect inventory/movements",permission:'inventory.read',handler:async()=>page(await db.inventoryMovement.findMany({take:100,orderBy:{createdAt:'desc'}}))});
+routes.push({method:'GET',path:'admin/suppliers',summary:"Inspect suppliers",permission:'purchasing.read',handler:async()=>page(await db.supplier.findMany({take:100}))});
