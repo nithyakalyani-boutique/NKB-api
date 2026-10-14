@@ -612,3 +612,12 @@ model GuestGrant {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model CustomerNote {
+ id String @id @default(uuid()) @db.Uuid
+ userId String
+ authorId String
+ body String
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
