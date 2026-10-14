@@ -357,3 +357,23 @@ model ServiceRequest {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Promotion {
+ id String @id @default(uuid()) @db.Uuid
+ code String @unique
+ title String
+ type String
+ basisPoints Int?
+ amountMinor BigInt?
+ minimumMinor BigInt @default(0)
+ maximumMinor BigInt?
+ startsAt DateTime @db.Timestamptz
+ endsAt DateTime @db.Timestamptz
+ limit Int
+ perCustomerLimit Int @default(1)
+ status String @default("DRAFT")
+ version Int @default(1)
+ redemptions Redemption[]
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
