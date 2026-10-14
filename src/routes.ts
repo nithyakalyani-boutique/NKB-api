@@ -62,3 +62,4 @@ routes.push({method:'POST',path:'cart/merge',summary:"Resolve signed-in cart",au
 routes.push({method:'POST',path:'checkout/quotes',summary:"Create immutable checkout quote",schema:quote,status:201,handler:async(c,b)=>checkout.createQuote(c,b)});
 routes.push({method:'GET',path:'checkout/quotes/:id',summary:"Read owned checkout quote",handler:async(c,_b,p)=>found(await db.checkoutSession.findFirst({where:{id:p.id,actor:c.actor}}))});
 routes.push({method:'POST',path:'checkout/orders',summary:"Reserve stock and place an order",schema:checkoutSchema,status:201,handler:async(c,b)=>checkout.placeOrder(c,b)});
+routes.push({method:'POST',path:'webhooks/payhere',summary:"Verify and persist PayHere callback",webhook:true,handler:async(_c,b)=>{requireThat(env.PAYMENT_PROVIDER==='payhere','NOT_FOUND','Provider is disabled.',404);return handlePayment(verifyPayHere(b));}});
