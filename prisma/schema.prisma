@@ -495,3 +495,14 @@ model StoreSetting {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model Address {
+ id String @id @default(uuid()) @db.Uuid
+ userId String
+ label String
+ address Json
+ isDefault Boolean @default(false)
+ @@index([userId])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
