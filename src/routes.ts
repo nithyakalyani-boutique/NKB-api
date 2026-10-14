@@ -44,3 +44,4 @@ const page=(items:unknown[])=>({items,pageInfo:{nextCursor:null,hasNextPage:fals
 routes.push({method:'GET',path:'csrf',summary:"Get actor-bound CSRF token",handler:async ctx=>({token:csrf(ctx.actor)})});
 routes.push({method:'GET',path:'store-config',summary:"Read public store configuration",handler:async()=>({name:'NITHYAKALYANI BOUTIQUE',demo:env.APP_ENV!=='production',locales:['en'],currencies:['LKR'],termsVersion:'draft-v1',shippingCountries:[...new Set((await db.shippingMethod.findMany({where:{enabled:true}})).flatMap(s=>s.countries))],contact:(await db.storeSetting.findUnique({where:{key:'contact'}}))?.value||null})});
 routes.push({method:'GET',path:'products',summary:"Search published sarees",handler:async ctx=>catalogue.products(ctx.req.query)});
+routes.push({method:'GET',path:'products/:slug',summary:"Read a published saree",handler:async(_c,_b,p)=>catalogue.product(p.slug)});
