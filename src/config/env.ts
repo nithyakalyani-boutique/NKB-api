@@ -7,3 +7,11 @@ if(env.PAYMENT_PROVIDER==='payhere'&&(!env.PAYHERE_MERCHANT_ID||!env.PAYHERE_MER
 if(env.EMAIL_PROVIDER==='resend'&&!env.RESEND_API_KEY)throw Error('Resend credentials are required');
 if(env.APP_ENV==='production'&&(!env.PUBLIC_APP_URL.startsWith('https:')||env.BETTER_AUTH_SECRET.includes('replace-')))throw Error('Production requires HTTPS and a private authentication secret');
 export const origins=env.TRUSTED_ORIGINS.split(',');
+
+if(env.SHIPPING_PROVIDER==='dhl')throw Error('DHL adapter is not released. Use contracted manual delivery until DHL acceptance is completed.');
+if(env.MEDIA_PROVIDER==='cloudinary'&&(!process.env.CLOUDINARY_CLOUD_NAME||!process.env.CLOUDINARY_API_KEY||!process.env.CLOUDINARY_API_SECRET))throw Error('Cloudinary credentials are required');
+if(env.APP_ENV==='production'){
+ if(!env.BETTER_AUTH_URL.startsWith('https:')||origins.some(o=>!o.startsWith('https:')))throw Error('Production authentication and trusted origins require HTTPS');
+ if(env.EMAIL_FROM.includes('example.invalid'))throw Error('Production requires an approved sender address');
+ if(!process.env.PAYHERE_APP_ID||!process.env.PAYHERE_APP_SECRET)throw Error('Production requires PayHere Merchant API credentials for refunds');
+}
