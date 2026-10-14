@@ -1,4 +1,4 @@
-import {db,transaction,dataJson} from '../database/db.js';
+import {db,transaction} from '../database/db.js';
 import {env} from '../config/env.js';
 import {found,requireThat} from '../common/problem.js';
 import {event} from '../common/audit.js';
