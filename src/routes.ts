@@ -75,3 +75,4 @@ routes.push({method:'GET',path:'return-requests/:id',summary:"Read authorized re
 routes.push({method:'POST',path:'orders/access/request',summary:"Request private order access code",schema:recovery,status:202,handler:async(_c,b)=>orders.requestAccess(b)});
 routes.push({method:'POST',path:'orders/access',summary:"Exchange one-use access code",schema:exchange,handler:async(c,b)=>orders.exchangeAccess(c,b)});
 routes.push({method:'GET',path:'me',summary:"Read my profile and capabilities",authenticated:true,handler:async c=>({user:await db.user.findUnique({where:{id:c.userId},select:{id:true,name:true,email:true,emailVerified:true,twoFactorEnabled:true}}),capabilities:c.capabilities})});
+routes.push({method:'PATCH',path:'me',summary:"Update profile display name",authenticated:true,schema:profile,handler:async(c,b)=>db.user.update({where:{id:c.userId},data:{name:String(b.name)},select:{id:true,name:true,email:true}})});
