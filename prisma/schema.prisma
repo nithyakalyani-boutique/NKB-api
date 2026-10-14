@@ -256,3 +256,15 @@ model PaymentAttempt {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model PaymentEvent {
+ id String @id @default(uuid()) @db.Uuid
+ dedupeKey String @unique
+ attemptId String @db.Uuid
+ payloadHash String
+ status String
+ verified Boolean
+ processedAt DateTime? @db.Timestamptz
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
