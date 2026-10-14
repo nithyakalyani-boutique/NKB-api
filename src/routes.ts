@@ -49,3 +49,4 @@ routes.push({method:'GET',path:'products/:id/related',summary:"Find related publ
 routes.push({method:'GET',path:'catalogue/facets',summary:"Read published search facets",handler:async()=>catalogue.facets()});
 routes.push({method:'GET',path:'search/suggestions',summary:"Suggest published sarees",handler:async ctx=>String(ctx.req.query.q||'').length<2?page([]):catalogue.products({q:ctx.req.query.q,limit:6})});
 routes.push({method:'GET',path:'collections',summary:"List published collections",handler:async()=>page(await db.collection.findMany({where:{status:'PUBLISHED'},orderBy:{position:'asc'}}))});
+routes.push({method:'GET',path:'collections/:slug',summary:"Read collection content",handler:async(_c,_b,p)=>found(await db.collection.findFirst({where:{slug:p.slug,status:'PUBLISHED'}}))});
