@@ -330,3 +330,15 @@ model Shipment {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model ShipmentItem {
+ id String @id @default(uuid()) @db.Uuid
+ shipmentId String @db.Uuid
+ shipment Shipment @relation(fields:[shipmentId],references:[id],onDelete:Restrict)
+ orderLineId String @db.Uuid
+ orderLine OrderLine @relation(fields:[orderLineId],references:[id],onDelete:Restrict)
+ quantity Int
+ @@unique([shipmentId,orderLineId])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
