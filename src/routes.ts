@@ -97,3 +97,4 @@ routes.push({method:'GET',path:'admin/shipping-methods',summary:"Inspect shippin
 routes.push({method:'GET',path:'admin/returns',summary:"Inspect returns",permission:'returns.manage',handler:async()=>page(await db.serviceRequest.findMany({include:{order:{select:{reference:true}}},take:100,orderBy:{createdAt:'desc'}}))});
 routes.push({method:'GET',path:'admin/content',summary:"Inspect content",permission:'content.write',handler:async()=>page(await db.contentPage.findMany({take:100}))});
 routes.push({method:'GET',path:'admin/staff',summary:"Inspect staff",permission:'staff.manage',handler:async()=>page(await db.staffGrant.findMany({take:100}))});
+routes.push({method:'GET',path:'admin/audit-events',summary:"Inspect audit-events",permission:'audit.read',handler:async()=>page(await db.auditEvent.findMany({take:100,orderBy:{createdAt:'desc'}}))});
