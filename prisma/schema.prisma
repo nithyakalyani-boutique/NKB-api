@@ -579,3 +579,16 @@ model Notification {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model IdempotencyRecord {
+ id String @id @default(uuid()) @db.Uuid
+ scope String
+ actor String
+ key String
+ requestHash String
+ response Json
+ expiresAt DateTime @db.Timestamptz
+ @@unique([scope,actor,key])
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
