@@ -13,3 +13,7 @@ ALTER TABLE "Address" ADD CONSTRAINT address_user_fk FOREIGN KEY ("userId") REFE
 ALTER TABLE "WishlistItem" ADD CONSTRAINT wishlist_user_fk FOREIGN KEY ("userId") REFERENCES "user" (id) ON DELETE RESTRICT;
 ALTER TABLE "WishlistItem" ADD CONSTRAINT wishlist_product_fk FOREIGN KEY ("productId") REFERENCES "Product" (id) ON DELETE RESTRICT;
 CREATE INDEX product_search_idx ON "Product" USING gin(to_tsvector('simple', title || ' ' || description || ' ' || fabric));
+CREATE FUNCTION prevent_ledger_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Ledger records are append-only'; END; $$;
+CREATE TRIGGER immutable_inventory BEFORE UPDATE OR DELETE ON "InventoryMovement" FOR EACH ROW EXECUTE FUNCTION prevent_ledger_mutation();
+CREATE TRIGGER immutable_financial BEFORE UPDATE OR DELETE ON "PaymentTransaction" FOR EACH ROW EXECUTE FUNCTION prevent_ledger_mutation();
+CREATE TRIGGER immutable_audit BEFORE UPDATE OR DELETE ON "AuditEvent" FOR EACH ROW EXECUTE FUNCTION prevent_ledger_mutation();
