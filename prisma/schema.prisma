@@ -149,3 +149,19 @@ model CartItem {
  createdAt DateTime @default(now()) @db.Timestamptz
  updatedAt DateTime @updatedAt @db.Timestamptz
 }
+
+model CheckoutSession {
+ id String @id @default(uuid()) @db.Uuid
+ cartId String @db.Uuid
+ cart Cart @relation(fields:[cartId],references:[id],onDelete:Restrict)
+ actor String
+ cartVersion Int
+ snapshot Json
+ status String @default("OPEN")
+ quoteExpiresAt DateTime @db.Timestamptz
+ submittedAt DateTime? @db.Timestamptz
+ termsVersion String?
+ order Order?
+ createdAt DateTime @default(now()) @db.Timestamptz
+ updatedAt DateTime @updatedAt @db.Timestamptz
+}
