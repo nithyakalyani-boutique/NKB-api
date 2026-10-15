@@ -14,7 +14,7 @@ for (const r of routes) {
     schema: { type: 'string' },
   }));
   if(r.method!=='GET'&&!r.webhook)parameters.push({name:'Origin',in:'header',required:true,schema:{type:'string',format:'uri'}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}});
-  if(['checkout/orders','cart/merge'].includes(r.path)||r.path.includes('/refunds')||r.path.includes('/receipts')||r.path.includes('/fulfillments')||r.path==='admin/inventory/adjustments')parameters.push({name:'Idempotency-Key',in:'header',required:true,schema:{type:'string',minLength:16,maxLength:100}});
+  if(r.method==='POST'&&['checkout/orders','orders/:id/payment-attempts','orders/:id/cancellation-requests','orders/:id/return-requests','admin/orders/:id/refunds','admin/orders/:id/fulfillments','admin/purchase-orders/:id/receipts','admin/returns/:id/receipts','admin/inventory/adjustments'].includes(r.path))parameters.push({name:'Idempotency-Key',in:'header',required:true,schema:{type:'string',minLength:8,maxLength:200}});
   if(r.method==='DELETE'&&r.path.startsWith('cart/'))parameters.push({name:'If-Match',in:'header',required:true,schema:{type:'integer',minimum:1}});
   (paths[path] ||= {})[r.method.toLowerCase()] = {
     operationId: r.method.toLowerCase() + r.path.replace(/[^a-z0-9]/gi, '_'),
