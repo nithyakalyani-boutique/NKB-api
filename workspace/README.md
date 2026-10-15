@@ -10,7 +10,7 @@ Node **24.20.0** is installed. From this folder:
 .\node_modules\.bin\pnpm.cmd local
 ```
 
-Stop any already-running project services first. This starts workspace-local PostgreSQL, applies migrations without resetting data, seeds idempotent demo products, builds the API, and starts API, worker, and storefront. It creates random local auth configuration only when .env files are absent. Press Ctrl+C to stop the owned processes.
+For a built storefront preview, append --preview. Stop any already-running project services first. This starts workspace-local PostgreSQL, applies migrations without resetting data, seeds idempotent demo products, builds the API, and starts API, worker, and storefront. It creates random local auth configuration only when .env files are absent. Press Ctrl+C to stop the owned processes.
 
 Open **http://localhost:3000/en** and **http://localhost:3000/admin/sign-in**. No universal admin password is seeded. Follow [setup](docs/SETUP.md) to create the first owner.
 
@@ -18,7 +18,7 @@ For a clean checkout: install pnpm 10.34.7 (or use `npm exec --yes --package=pnp
 
 ## Verification and launch state
 
-See [implementation status](docs/IMPLEMENTATION_STATUS.md), [technology decisions](docs/TECHNOLOGY_DECISIONS.md), and [business inputs](docs/BUSINESS_INPUTS.md). A working local store is not an approved live deployment. PayHere/DHL/provider credentials, approved product photos, policies, delivery/tax rules, and staging checks remain necessary.
+See [implementation status](docs/IMPLEMENTATION_STATUS.md), [technology decisions](docs/TECHNOLOGY_DECISIONS.md), and [business inputs](docs/BUSINESS_INPUTS.md). A working local store is not an approved live deployment or a claim that every detailed blueprint feature is finished. PayHere/DHL/provider credentials, approved product photos, policies, delivery/tax rules, and staging checks remain necessary.
 
 ## Separate repositories
 
