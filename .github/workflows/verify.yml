@@ -34,6 +34,7 @@ jobs:
       - run: node api/scripts/restore-workspace.mjs
       - run: npm install --global pnpm@10.34.7
       - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod
       - run: pnpm --filter @nkb/api db:generate
       - run: pnpm --filter @nkb/api db:migrate
       - run: pnpm --filter @nkb/api lint && pnpm --filter @nkb/api typecheck
