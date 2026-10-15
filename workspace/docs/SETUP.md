@@ -26,3 +26,8 @@ pnpm lint; pnpm typecheck; pnpm test; pnpm test:integration; pnpm build. Use a s
 Browser tests require a running API/client, seeded development data, and the local test identity. Run pnpm --filter @nkb/api exec tsx scripts/create-test-staff.ts, then pnpm test:e2e. Use PLAYWRIGHT_CHANNEL=chromium after pnpm --filter @nkb/client exec playwright install chromium on Linux. Tests create explicitly synthetic orders and records.
 
 Do not run next build while next dev is regenerating its type output; stop dev first for a repeatable final build. On Windows PowerShell, use .cmd executables when execution policy blocks .ps1 wrappers.
+
+## Standalone production preview
+Use pnpm local --preview to build the storefront and run its standalone server with the same local-only providers. This is a production bundle preview, not production business configuration. The launcher shuts down its own stack together and asks the database to stop cleanly.
+
+After browser testing, run pnpm --filter @nkb/api exec tsx scripts/disable-test-staff.ts to revoke ephemeral test operators before creating your own first owner.
