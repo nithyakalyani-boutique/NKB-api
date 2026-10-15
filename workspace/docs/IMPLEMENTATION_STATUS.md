@@ -1,19 +1,40 @@
-# Implementation status — 14 October 2026
+# Implementation status — 15 October 2026
 
-The application is implemented locally and is undergoing acceptance checks. It is **not production ready** and has not been deployed. Demo products, sample policies, and simulated payments are explicit.
+A working custom local storefront, staff dashboard, API and worker are implemented. This is **not a claim that every detailed requirement in PROJECT.md is complete**, and it has not been deployed for real sales. The provided logo is used. The catalogue, policies, local email and payment simulator are explicitly demonstrations.
 
 | Milestone | Status | Evidence / limits |
 | --- | --- | --- |
-| M0 foundation | verified locally | pnpm install, pinned versions, Prisma generation, API/client builds passed; two independent repositories |
-| M1 data/staff | verified locally | Real PostgreSQL migrations applied; generated Better Auth/MFA schema; audited staff operations; 24 unit tests passed |
-| M2 storefront | in progress | Browser guest purchase passed; mobile axe found an unnamed sort control, fixed and being rerun |
-| M3 purchase safety | verified locally | 17 PostgreSQL tests passed: stock race, idempotency, quote changes, callbacks, late capture, refunds, ownership |
-| M4 operations | in progress | Partial shipment, receipt replay and local refund worker tests passed; staff browser test being rerun after label fix |
-| M5 release candidate | in progress | Production build passed. Browser, production security review, backup/restore and CI hardening remain in progress |
-| M6 live launch | blocked on external input | Approved catalogue/images, policies, delivery/tax rules, merchant credentials, domain/hosting and real provider verification required |
+| M0 foundation | verified locally | Pinned pnpm workspace; independent api/.git and client/.git; fresh root-input restoration; dependency installation, Prisma generation and migrations |
+| M1 data/staff | core verified locally | Real PostgreSQL; official Better Auth/MFA schema; owner bootstrap; backend RBAC/CSRF; audit records; no universal password |
+| M2 storefront | verified locally | Responsive homepage, catalogue, filters, products, cart, wishlist, account/content routes; supplied branding; real browser screenshots |
+| M3 commerce | core verified locally | Exact money, immutable quotes, stock reservations, callbacks, idempotency, guest access, refund submission/recovery and cart merging |
+| M4 operations | core verified locally | Staff catalogue/media, inventory, purchasing/receipts, shipments, return inspection, refunds/reconciliation, promotions, content and settings; local notification worker |
+| M5 release candidate | incomplete | Dockerfiles, CI and runbooks provided; infrastructure/provider acceptance and remaining detailed scope below are outstanding |
+| M6 live launch | not performed | Requires approved business inputs, hosting, provider verification and release acceptance |
 
-The host has Node 24.20.0 but no Docker or Redis. A workspace-local PostgreSQL 18.4 binary runs real database tests. Docker Compose targets PostgreSQL 17.6 and Redis 7.4; the version difference is documented and must be tested in CI. Explicit local PostgreSQL outbox transport is supported; production uses BullMQ/Redis. No Redis/BullMQ runtime verification has been claimed.
+## Checks actually run
 
-Known limits still being addressed or requiring launch work: live PayHere callback/refund reconciliation, contracted DHL adapter, localized reviewed translations, representative performance measurements, screen-reader audit, full backup restore rehearsal, and provider-specific infrastructure verification. The current first-release schema uses controlled text catalogue attributes and JSON snapshots instead of every optional normalized table in the blueprint. A single database advisory lock serializes commerce writes for correctness at boutique scale; load testing is required before higher-volume use.
+- API unit tests: 30 passed. Client unit tests: 7 passed.
+- PostgreSQL integration tests: 22 passed, including stock races, checkout replay/mismatch, stale quotes/terms, payment mismatch/replay/late capture, partial dispatch, concurrent refunds, interrupted refund recovery, duplicate capture refunds, receipt replay, ownership, cart merge and generated response contracts.
+- Browser suite: six passed using installed Microsoft Edge: staff sign-in and saved operations; guest checkout through a simulated successful payment; mobile reflow and axe catalogue checks; private-order denial; HTTP origin/CSRF/auth enforcement; owned image upload and invalid-image rejection.
+- API and Next production builds, TypeScript checks and ESLint passed. Final standalone preview acceptance is recorded in VERIFICATION.md.
+- pnpm audit --prod: no known vulnerabilities after resolving the initial nine findings. No test or audit result guarantees production security.
+- The local launcher starts real PostgreSQL, applies migrations without resetting data, seeds idempotent fixtures, builds the API, and starts API/worker/storefront. --preview builds and starts the standalone Next bundle. Shared files can be restored using node api/scripts/restore-workspace.mjs.
 
-Commands run and failures: sandbox blocked npm network, tsx userInfo, and esbuild reads; authorized reruns succeeded. An initial integration run failed because the PostgreSQL process stopped across the conversation pause; restart and rerun passed all 17 tests. Initial browser run: 2 passed, 2 failed (label lookup and hidden mobile sort name); fixes are in progress. No failed check is represented as passed.
+## Remaining implementation and release work
+
+The detailed blueprint is broader than the verified local core. Remaining work includes staff email invitation acceptance (current owner assigns existing accounts), scheduled historical pricing and fully normalized taxonomy/translation administration, all detailed administration CRUD screens, comprehensive response schemas for every admin endpoint, provider payment-retrieval reconciliation and a complete financial-exception resolution workflow, configured return-window/exclusion rules, Sentry wiring, distributed HTTP throttling, indexed database-level search/pagination at larger scale, and representative performance measurements. Existing exception screens preserve unresolved evidence and block unsafe fulfillment; they are not an automated settlement service.
+
+PayHere checkout verification and refund HTTP adapters are implemented and tested with synthetic inputs; real sandbox/live calls, merchant credentials, refunds and settlement verification have **not** occurred. Cloudinary and Resend adapters need credentialed end-to-end acceptance. Manual configured delivery works locally; contracted DHL integration is not implemented and selecting dhl fails clearly. English and LKR are the initial supported locale/currency. Reviewed Tamil/Sinhala translations and additional market rules are not invented.
+
+Docker, Redis/BullMQ, GitHub CI, Linux containers and a logical backup/restore rehearsal have not been run on this Windows host. Docker and Redis are absent; pg_dump/pg_restore are not included in the embedded server package. CI includes a real Redis worker check and isolated PostgreSQL restore rehearsal, but no remote repository was supplied or workflow run claimed. PostgreSQL 18.4 was used locally; CI/Compose target 17.6. Validate that version difference before release.
+
+The current schema consolidates some blueprint tables into versioned records and JSON snapshots. Commerce writes use one PostgreSQL advisory transaction lock for boutique-scale correctness. Broader screen-reader, keyboard, device and load testing remain; the axe result covers the tested mobile catalogue, not the entire site.
+
+## Evidence and changed areas
+
+Browser screenshots: client/test/evidence/home-desktop.png, admin-desktop.png, checkout-desktop.png, order-desktop.png and shop-mobile.png. Key code areas: api/prisma, api/src/modules, api/src/integrations, api/src/contracts, api/src/jobs, api/test, client/src/app, client/src/components, client/src/lib/api and client/test. Startup, Docker, CI and handoff documentation are included. Canonical root files and the original specification are tracked under api/workspace; dependency snapshots are also in client/workspace.
+
+Failures encountered and resolved: sandbox restrictions required authorized network/process reruns; local services stopped across conversation pauses, producing connection-refused tests before restart; browser labels/mobile sort naming were corrected; the invalid-media test was corrected to expect the API's 422 response; initial dependency audit findings were patched. No failed or unrun check is counted as passed.
+
+See SETUP.md, DEPLOYMENT.md, OPERATIONS.md, BUSINESS_INPUTS.md and TECHNOLOGY_DECISIONS.md. Both repositories exceed the requested minimum commit counts; histories consist of nonempty incremental changes.
