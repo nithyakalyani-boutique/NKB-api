@@ -39,6 +39,7 @@ jobs:
       - run: pnpm --filter @nkb/api lint && pnpm --filter @nkb/api typecheck
       - run: pnpm --filter @nkb/api test && pnpm --filter @nkb/api test:integration
       - run: pnpm --filter @nkb/api build
+      - run: pnpm --filter @nkb/api exec tsx scripts/check-queue.ts
       - name: Restore rehearsal into a separate database
         env:
           PG_CONTAINER: ${{ job.services.postgres.id }}
