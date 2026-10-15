@@ -1,10 +1,70 @@
-export const about={"slug":"about","title":"A considered way to wear a saree","body":"Nithyakalyani Boutique is a saree boutique based in Sri Lanka. We are building a thoughtful collection with attention to colour, texture, and the details that help you choose.\n\nThis development store uses sample products. The owner’s approved brand story and catalogue will replace these fixtures before launch.","kind":"PAGE","status":"PUBLISHED"};
-export const contact={"slug":"contact","title":"Let’s find your next saree","body":"Our verified support email, phone number, address, and hours will appear here before launch.\n\nThis is a development preview. No real payments or deliveries are accepted. For an order in this preview, use secure order access.","kind":"PAGE","status":"PUBLISHED"};
-export const care_guide={"slug":"care-guide","title":"A little care, a lasting favourite","body":"Always follow the care instructions supplied with your specific saree. Fibre composition, dyes, zari, and embellishments affect how a garment should be cleaned.\n\nStore clean, dry sarees away from direct sunlight. Avoid perfume on delicate textiles. Consult a professional cleaner when the garment label recommends it.","kind":"PAGE","status":"PUBLISHED"};
-export const faq={"slug":"faq","title":"The details, simply explained","body":"Can I buy without an account? Yes. Guest checkout and secure order access are supported.\n\nWhere do you deliver? The preview includes a demonstration Sri Lanka delivery method. Approved destinations and rates will be published before launch.\n\nAre these real products? No. The sample catalogue and textile illustrations are explicitly for development.","kind":"PAGE","status":"PUBLISHED"};
-export const shipping={"slug":"shipping","title":"Shipping information · draft","body":"Owner review required. Only explicitly enabled destinations appear at checkout. Dispatch estimates, carrier services, rates, and duties arrangements must be approved before live selling.","kind":"POLICY","status":"PUBLISHED"};
-export const returns={"slug":"returns","title":"Returns information · draft","body":"Owner review required. This preview demonstrates return requests, inspection, and separate refund processing. Return windows, exclusions, condition requirements, and the return address must be approved before launch.","kind":"POLICY","status":"PUBLISHED"};
-export const privacy={"slug":"privacy","title":"Privacy information · draft","body":"Owner review required. Account, delivery, and order details are used to provide store functions. Data retention periods, controller contact details, and applicable rights procedures must be confirmed before public launch.","kind":"POLICY","status":"PUBLISHED"};
-export const terms={"slug":"terms","title":"Purchase terms · draft","body":"Owner review required. This development checkout uses simulated payments and demonstration inventory. It is not accepting real orders. Terms version: draft-v1.","kind":"POLICY","status":"PUBLISHED"};
-export const choosing_your_colour={"slug":"choosing-your-colour","title":"A palette for your own occasion","body":"Start with the colours you enjoy wearing. A saree can feel entirely different in daylight and evening light; inspect the actual fabric and the owner-approved product photographs before choosing.","kind":"JOURNAL","status":"PUBLISHED"};
-export const the_art_of_the_drape={"slug":"the-art-of-the-drape","title":"Room for your own style","body":"The saree leaves room for personal expression. Explore the border, pallu, and how a fabric falls; these details help shape the feeling of a drape. Product-specific information should come from verified catalogue details.","kind":"JOURNAL","status":"PUBLISHED"};
+export const about = {
+  slug: 'about',
+  title: 'A considered way to wear a saree',
+  body: 'Nithyakalyani Boutique is a saree boutique based in Sri Lanka. We are building a thoughtful collection with attention to colour, texture, and the details that help you choose.\n\nThis development store uses sample products. The owner’s approved brand story and catalogue will replace these fixtures before launch.',
+  kind: 'PAGE',
+  status: 'PUBLISHED',
+};
+export const contact = {
+  slug: 'contact',
+  title: 'Let’s find your next saree',
+  body: 'Our verified support email, phone number, address, and hours will appear here before launch.\n\nThis is a development preview. No real payments or deliveries are accepted. For an order in this preview, use secure order access.',
+  kind: 'PAGE',
+  status: 'PUBLISHED',
+};
+export const care_guide = {
+  slug: 'care-guide',
+  title: 'A little care, a lasting favourite',
+  body: 'Always follow the care instructions supplied with your specific saree. Fibre composition, dyes, zari, and embellishments affect how a garment should be cleaned.\n\nStore clean, dry sarees away from direct sunlight. Avoid perfume on delicate textiles. Consult a professional cleaner when the garment label recommends it.',
+  kind: 'PAGE',
+  status: 'PUBLISHED',
+};
+export const faq = {
+  slug: 'faq',
+  title: 'The details, simply explained',
+  body: 'Can I buy without an account? Yes. Guest checkout and secure order access are supported.\n\nWhere do you deliver? The preview includes a demonstration Sri Lanka delivery method. Approved destinations and rates will be published before launch.\n\nAre these real products? No. The sample catalogue and textile illustrations are explicitly for development.',
+  kind: 'PAGE',
+  status: 'PUBLISHED',
+};
+export const shipping = {
+  slug: 'shipping',
+  title: 'Shipping information · draft',
+  body: 'Owner review required. Only explicitly enabled destinations appear at checkout. Dispatch estimates, carrier services, rates, and duties arrangements must be approved before live selling.',
+  kind: 'POLICY',
+  status: 'PUBLISHED',
+};
+export const returns = {
+  slug: 'returns',
+  title: 'Returns information · draft',
+  body: 'Owner review required. This preview demonstrates return requests, inspection, and separate refund processing. Return windows, exclusions, condition requirements, and the return address must be approved before launch.',
+  kind: 'POLICY',
+  status: 'PUBLISHED',
+};
+export const privacy = {
+  slug: 'privacy',
+  title: 'Privacy information · draft',
+  body: 'Owner review required. Account, delivery, and order details are used to provide store functions. Data retention periods, controller contact details, and applicable rights procedures must be confirmed before public launch.',
+  kind: 'POLICY',
+  status: 'PUBLISHED',
+};
+export const terms = {
+  slug: 'terms',
+  title: 'Purchase terms · draft',
+  body: 'Owner review required. This development checkout uses simulated payments and demonstration inventory. It is not accepting real orders. Terms version: draft-v1.',
+  kind: 'POLICY',
+  status: 'PUBLISHED',
+};
+export const choosing_your_colour = {
+  slug: 'choosing-your-colour',
+  title: 'A palette for your own occasion',
+  body: 'Start with the colours you enjoy wearing. A saree can feel entirely different in daylight and evening light; inspect the actual fabric and the owner-approved product photographs before choosing.',
+  kind: 'JOURNAL',
+  status: 'PUBLISHED',
+};
+export const the_art_of_the_drape = {
+  slug: 'the-art-of-the-drape',
+  title: 'Room for your own style',
+  body: 'The saree leaves room for personal expression. Explore the border, pallu, and how a fabric falls; these details help shape the feeling of a drape. Product-specific information should come from verified catalogue details.',
+  kind: 'JOURNAL',
+  status: 'PUBLISHED',
+};

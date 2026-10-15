@@ -1,1 +1,39 @@
-import {mkdir,writeFile} from 'node:fs/promises';import {randomBytes} from 'node:crypto';import {auth} from '../src/auth/auth.js';import {db,transaction} from '../src/database/db.js';import {env} from '../src/config/env.js';if(!['local','test'].includes(env.APP_ENV))throw Error('Test accounts are forbidden outside local/test');const email='e2e-'+crypto.randomUUID()+'@example.invalid';const password=randomBytes(24).toString('base64url');const result=await auth.api.signUpEmail({body:{email,password,name:'Browser Test Operator'}});await transaction(async tx=>{await tx.user.update({where:{id:result.user.id},data:{emailVerified:true}});await tx.staffGrant.create({data:{userId:result.user.id,role:'OWNER',capabilities:['*'],grantedBy:'explicit-local-e2e-command'}});await tx.auditEvent.create({data:{actor:'test-bootstrap',action:'test.staff.create',resourceId:result.user.id,detail:{environment:env.APP_ENV},requestId:crypto.randomUUID()}});});await mkdir('.local',{recursive:true});await writeFile('.local/e2e-user.json',JSON.stringify({email,password,userId:result.user.id}));console.log('Ephemeral browser-test identity written to ignored api/.local/e2e-user.json.');await db.$disconnect();
+import { mkdir, writeFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { auth } from '../src/auth/auth.js';
+import { db, transaction } from '../src/database/db.js';
+import { env } from '../src/config/env.js';
+if (!['local', 'test'].includes(env.APP_ENV))
+  throw Error('Test accounts are forbidden outside local/test');
+const email = 'e2e-' + crypto.randomUUID() + '@example.invalid';
+const password = randomBytes(24).toString('base64url');
+const result = await auth.api.signUpEmail({
+  body: { email, password, name: 'Browser Test Operator' },
+});
+await transaction(async (tx) => {
+  await tx.user.update({ where: { id: result.user.id }, data: { emailVerified: true } });
+  await tx.staffGrant.create({
+    data: {
+      userId: result.user.id,
+      role: 'OWNER',
+      capabilities: ['*'],
+      grantedBy: 'explicit-local-e2e-command',
+    },
+  });
+  await tx.auditEvent.create({
+    data: {
+      actor: 'test-bootstrap',
+      action: 'test.staff.create',
+      resourceId: result.user.id,
+      detail: { environment: env.APP_ENV },
+      requestId: crypto.randomUUID(),
+    },
+  });
+});
+await mkdir('.local', { recursive: true });
+await writeFile(
+  '.local/e2e-user.json',
+  JSON.stringify({ email, password, userId: result.user.id }),
+);
+console.log('Ephemeral browser-test identity written to ignored api/.local/e2e-user.json.');
+await db.$disconnect();

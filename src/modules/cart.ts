@@ -1,11 +1,150 @@
-import type {Context} from '../common/context.js';
-import {transaction,type Tx} from '../database/db.js';
-import {found,requireThat} from '../common/problem.js';
-import {hash} from '../common/crypto.js';
-import {money} from '../common/money.js';
-export async function currentCart(tx:Tx,ctx:Context){return (await tx.cart.findFirst({where:{actor:ctx.actor,status:'ACTIVE'}}))||tx.cart.create({data:{actor:ctx.actor,userId:ctx.userId}});}
-export async function cartView(tx:Tx,id:string){const cart=found(await tx.cart.findUnique({where:{id},include:{items:{include:{variant:{include:{product:true,balances:true}}}}}}));const lines=cart.items.map(i=>({id:i.id,variantId:i.variantId,quantity:i.quantity,title:i.variant.product.title,slug:i.variant.product.slug,sku:i.variant.sku,image:(i.variant.product.images as {url:string}[])[0]?.url||'',price:money(i.variant.priceMinor),lineTotal:money(i.variant.priceMinor*BigInt(i.quantity)),available:i.variant.balances.reduce((s,b)=>s+b.onHand-b.reserved,0),active:i.variant.active&&i.variant.product.status==='ACTIVE'}));return {id:cart.id,version:cart.version,currency:cart.currency,coupon:cart.coupon,items:lines,subtotal:money(lines.reduce((s,i)=>s+BigInt(i.lineTotal.amountMinor),0n)),warnings:lines.filter(i=>!i.active||i.available<i.quantity).map(i=>i.title+' needs a quantity update.')};}
-export async function getCart(ctx:Context){return transaction(async tx=>cartView(tx,(await currentCart(tx,ctx)).id));}
-export async function changeCart(ctx:Context,kind:string,input:Record<string,unknown>,id?:string){return transaction(async tx=>{const c=await currentCart(tx,ctx);const version=kind==='delete'||kind==='remove-coupon'?Number(ctx.req.headers['if-match']):input.expectedVersion;requireThat(c.version===version,'CART_VERSION_CONFLICT','Your cart changed. Reload it before trying again.',409);if(kind==='add'){const v=found(await tx.variant.findFirst({where:{id:String(input.variantId),active:true,product:{status:'ACTIVE'}}}));const old=await tx.cartItem.findUnique({where:{cartId_variantId:{cartId:c.id,variantId:v.id}}});const quantity=(old?.quantity||0)+Number(input.quantity);requireThat(quantity<=20,'QUANTITY_LIMIT','Maximum 20 per item.');await tx.cartItem.upsert({where:{cartId_variantId:{cartId:c.id,variantId:v.id}},create:{cartId:c.id,variantId:v.id,quantity},update:{quantity}});}else if(kind==='quantity'||kind==='delete'){const item=found(await tx.cartItem.findFirst({where:{id,cartId:c.id}}));if(kind==='delete')await tx.cartItem.delete({where:{id:item.id}});else await tx.cartItem.update({where:{id:item.id},data:{quantity:Number(input.quantity)}});}else if(kind==='coupon'){const promotion=await tx.promotion.findUnique({where:{code:String(input.code).toUpperCase()}});requireThat(promotion?.status==='ACTIVE'&&promotion.startsAt<=new Date()&&promotion.endsAt>new Date(),'INVALID_COUPON','This promotion is not available.');}await tx.cart.update({where:{id:c.id},data:{version:{increment:1},...(kind==='coupon'?{coupon:String(input.code).toUpperCase()}:kind==='remove-coupon'?{coupon:null}:{})}});return cartView(tx,c.id);});}
-export async function mergeCart(ctx:Context){requireThat(ctx.userId,'SIGN_IN_REQUIRED','Sign in first.',401);return transaction(async tx=>{const target=await currentCart(tx,ctx);const credential=ctx.req.cookies?.nkb_guest as string|undefined;if(!credential)return cartView(tx,target.id);const guest=await tx.cart.findFirst({where:{actor:'guest:'+hash(credential),status:'ACTIVE'},include:{items:{include:{variant:{include:{balances:true,product:true}}}}}});if(!guest)return cartView(tx,target.id);for(const item of guest.items){if(!item.variant.active||item.variant.product.status!=='ACTIVE')continue;const available=item.variant.balances.reduce((s,b)=>s+b.onHand-b.reserved,0);const existing=await tx.cartItem.findUnique({where:{cartId_variantId:{cartId:target.id,variantId:item.variantId}}});const quantity=Math.min(20,available,item.quantity+(existing?.quantity||0));if(quantity>0)await tx.cartItem.upsert({where:{cartId_variantId:{cartId:target.id,variantId:item.variantId}},create:{cartId:target.id,variantId:item.variantId,quantity},update:{quantity}});}await tx.cart.update({where:{id:guest.id},data:{status:'ABANDONED',version:{increment:1}}});await tx.cart.update({where:{id:target.id},data:{version:{increment:1},coupon:null}});return cartView(tx,target.id);});}
-
+import type { Context } from '../common/context.js';
+import { transaction, type Tx } from '../database/db.js';
+import { found, requireThat } from '../common/problem.js';
+import { hash } from '../common/crypto.js';
+import { money } from '../common/money.js';
+export async function currentCart(tx: Tx, ctx: Context) {
+  return (
+    (await tx.cart.findFirst({ where: { actor: ctx.actor, status: 'ACTIVE' } })) ||
+    tx.cart.create({ data: { actor: ctx.actor, userId: ctx.userId } })
+  );
+}
+export async function cartView(tx: Tx, id: string) {
+  const cart = found(
+    await tx.cart.findUnique({
+      where: { id },
+      include: { items: { include: { variant: { include: { product: true, balances: true } } } } },
+    }),
+  );
+  const lines = cart.items.map((i) => ({
+    id: i.id,
+    variantId: i.variantId,
+    quantity: i.quantity,
+    title: i.variant.product.title,
+    slug: i.variant.product.slug,
+    sku: i.variant.sku,
+    image: (i.variant.product.images as { url: string }[])[0]?.url || '',
+    price: money(i.variant.priceMinor),
+    lineTotal: money(i.variant.priceMinor * BigInt(i.quantity)),
+    available: i.variant.balances.reduce((s, b) => s + b.onHand - b.reserved, 0),
+    active: i.variant.active && i.variant.product.status === 'ACTIVE',
+  }));
+  return {
+    id: cart.id,
+    version: cart.version,
+    currency: cart.currency,
+    coupon: cart.coupon,
+    items: lines,
+    subtotal: money(lines.reduce((s, i) => s + BigInt(i.lineTotal.amountMinor), 0n)),
+    warnings: lines
+      .filter((i) => !i.active || i.available < i.quantity)
+      .map((i) => i.title + ' needs a quantity update.'),
+  };
+}
+export async function getCart(ctx: Context) {
+  return transaction(async (tx) => cartView(tx, (await currentCart(tx, ctx)).id));
+}
+export async function changeCart(
+  ctx: Context,
+  kind: string,
+  input: Record<string, unknown>,
+  id?: string,
+) {
+  return transaction(async (tx) => {
+    const c = await currentCart(tx, ctx);
+    const version =
+      kind === 'delete' || kind === 'remove-coupon'
+        ? Number(ctx.req.headers['if-match'])
+        : input.expectedVersion;
+    requireThat(
+      c.version === version,
+      'CART_VERSION_CONFLICT',
+      'Your cart changed. Reload it before trying again.',
+      409,
+    );
+    if (kind === 'add') {
+      const v = found(
+        await tx.variant.findFirst({
+          where: { id: String(input.variantId), active: true, product: { status: 'ACTIVE' } },
+        }),
+      );
+      const old = await tx.cartItem.findUnique({
+        where: { cartId_variantId: { cartId: c.id, variantId: v.id } },
+      });
+      const quantity = (old?.quantity || 0) + Number(input.quantity);
+      requireThat(quantity <= 20, 'QUANTITY_LIMIT', 'Maximum 20 per item.');
+      await tx.cartItem.upsert({
+        where: { cartId_variantId: { cartId: c.id, variantId: v.id } },
+        create: { cartId: c.id, variantId: v.id, quantity },
+        update: { quantity },
+      });
+    } else if (kind === 'quantity' || kind === 'delete') {
+      const item = found(await tx.cartItem.findFirst({ where: { id, cartId: c.id } }));
+      if (kind === 'delete') await tx.cartItem.delete({ where: { id: item.id } });
+      else
+        await tx.cartItem.update({
+          where: { id: item.id },
+          data: { quantity: Number(input.quantity) },
+        });
+    } else if (kind === 'coupon') {
+      const promotion = await tx.promotion.findUnique({
+        where: { code: String(input.code).toUpperCase() },
+      });
+      requireThat(
+        promotion?.status === 'ACTIVE' &&
+          promotion.startsAt <= new Date() &&
+          promotion.endsAt > new Date(),
+        'INVALID_COUPON',
+        'This promotion is not available.',
+      );
+    }
+    await tx.cart.update({
+      where: { id: c.id },
+      data: {
+        version: { increment: 1 },
+        ...(kind === 'coupon'
+          ? { coupon: String(input.code).toUpperCase() }
+          : kind === 'remove-coupon'
+            ? { coupon: null }
+            : {}),
+      },
+    });
+    return cartView(tx, c.id);
+  });
+}
+export async function mergeCart(ctx: Context) {
+  requireThat(ctx.userId, 'SIGN_IN_REQUIRED', 'Sign in first.', 401);
+  return transaction(async (tx) => {
+    const target = await currentCart(tx, ctx);
+    const credential = ctx.req.cookies?.nkb_guest as string | undefined;
+    if (!credential) return cartView(tx, target.id);
+    const guest = await tx.cart.findFirst({
+      where: { actor: 'guest:' + hash(credential), status: 'ACTIVE' },
+      include: { items: { include: { variant: { include: { balances: true, product: true } } } } },
+    });
+    if (!guest) return cartView(tx, target.id);
+    for (const item of guest.items) {
+      if (!item.variant.active || item.variant.product.status !== 'ACTIVE') continue;
+      const available = item.variant.balances.reduce((s, b) => s + b.onHand - b.reserved, 0);
+      const existing = await tx.cartItem.findUnique({
+        where: { cartId_variantId: { cartId: target.id, variantId: item.variantId } },
+      });
+      const quantity = Math.min(20, available, item.quantity + (existing?.quantity || 0));
+      if (quantity > 0)
+        await tx.cartItem.upsert({
+          where: { cartId_variantId: { cartId: target.id, variantId: item.variantId } },
+          create: { cartId: target.id, variantId: item.variantId, quantity },
+          update: { quantity },
+        });
+    }
+    await tx.cart.update({
+      where: { id: guest.id },
+      data: { status: 'ABANDONED', version: { increment: 1 } },
+    });
+    await tx.cart.update({
+      where: { id: target.id },
+      data: { version: { increment: 1 }, coupon: null },
+    });
+    return cartView(tx, target.id);
+  });
+}

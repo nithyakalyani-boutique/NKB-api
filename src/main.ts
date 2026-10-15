@@ -1,26 +1,52 @@
 import 'reflect-metadata';
-import {NestFactory} from '@nestjs/core';
-import {ExpressAdapter} from '@nestjs/platform-express';
+import { NestFactory } from '@nestjs/core';
+import { ExpressAdapter } from '@nestjs/platform-express';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
-import {toNodeHandler} from 'better-auth/node';
-import {auth} from './auth/auth.js';
-import {env} from './config/env.js';
-import {db} from './database/db.js';
-import {assertReleaseData} from './config/release.js';
-import {readiness,closeReadiness} from './config/readiness.js';
-import {AppModule} from './app.module.js';
-const server=express();
+import { toNodeHandler } from 'better-auth/node';
+import { auth } from './auth/auth.js';
+import { env } from './config/env.js';
+import { db } from './database/db.js';
+import { assertReleaseData } from './config/release.js';
+import { readiness, closeReadiness } from './config/readiness.js';
+import { AppModule } from './app.module.js';
+const server = express();
 server.disable('x-powered-by');
-server.set('json replacer',(_k:string,v:unknown)=>typeof v==='bigint'?v.toString():v);
+server.set('json replacer', (_k: string, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
 server.use(helmet());
-server.use((_req,res,next)=>{res.setHeader('X-Request-ID',crypto.randomUUID());next();});
-server.all('/api/auth/{*path}',toNodeHandler(auth));
-server.use('/api/v1/admin/media/:id/upload',express.raw({type:['image/png','image/jpeg','image/webp'],limit:'5mb'}));
-server.use(express.json({limit:'256kb'}));server.use(express.urlencoded({extended:false,limit:'16kb'}));server.use(cookieParser());
-server.get('/health/live',(_req,res)=>res.json({status:'ok'}));
-server.get('/health/ready',async(_req,res)=>{try{res.json(await readiness());}catch{res.status(503).json({status:'unavailable'});}});
+server.use((_req, res, next) => {
+  res.setHeader('X-Request-ID', crypto.randomUUID());
+  next();
+});
+server.all('/api/auth/{*path}', toNodeHandler(auth));
+server.use(
+  '/api/v1/admin/media/:id/upload',
+  express.raw({ type: ['image/png', 'image/jpeg', 'image/webp'], limit: '5mb' }),
+);
+server.use(express.json({ limit: '256kb' }));
+server.use(express.urlencoded({ extended: false, limit: '16kb' }));
+server.use(cookieParser());
+server.get('/health/live', (_req, res) => res.json({ status: 'ok' }));
+server.get('/health/ready', async (_req, res) => {
+  try {
+    res.json(await readiness());
+  } catch {
+    res.status(503).json({ status: 'unavailable' });
+  }
+});
 await assertReleaseData();
-const app=await NestFactory.create(AppModule,new ExpressAdapter(server),{bodyParser:false,logger:['error','warn']});app.enableShutdownHooks();await app.listen(env.PORT,process.env.HOST||'127.0.0.1');console.log('API ready at http://localhost:'+env.PORT);
-for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,async()=>{closeReadiness();await app.close();await db.$disconnect();process.exit(0);});
+const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
+  bodyParser: false,
+  logger: ['error', 'warn'],
+});
+app.enableShutdownHooks();
+await app.listen(env.PORT, process.env.HOST || '127.0.0.1');
+console.log('API ready at http://localhost:' + env.PORT);
+for (const signal of ['SIGINT', 'SIGTERM'] as const)
+  process.on(signal, async () => {
+    closeReadiness();
+    await app.close();
+    await db.$disconnect();
+    process.exit(0);
+  });

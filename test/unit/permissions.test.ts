@@ -1,1 +1,12 @@
-import {it,expect} from 'vitest';import {roles,can} from '../../src/auth/permissions.js';it('restricts support from refunds and role assignment',()=>{expect(can(roles.SUPPORT,'orders.read')).toBe(true);expect(can(roles.SUPPORT,'refunds.issue')).toBe(false);expect(can(roles.SUPPORT,'staff.manage')).toBe(false);});it('allows only explicit capability or owner wildcard',()=>{expect(can([], 'orders.read')).toBe(false);expect(can(roles.OWNER,'staff.manage')).toBe(true);expect(can(roles.FULFILLMENT,'finance.read')).toBe(false);});
+import { it, expect } from 'vitest';
+import { roles, can } from '../../src/auth/permissions.js';
+it('restricts support from refunds and role assignment', () => {
+  expect(can(roles.SUPPORT, 'orders.read')).toBe(true);
+  expect(can(roles.SUPPORT, 'refunds.issue')).toBe(false);
+  expect(can(roles.SUPPORT, 'staff.manage')).toBe(false);
+});
+it('allows only explicit capability or owner wildcard', () => {
+  expect(can([], 'orders.read')).toBe(false);
+  expect(can(roles.OWNER, 'staff.manage')).toBe(true);
+  expect(can(roles.FULFILLMENT, 'finance.read')).toBe(false);
+});

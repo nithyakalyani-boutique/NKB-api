@@ -1,144 +1,1384 @@
-import {z} from 'zod';
-import type {Route} from './common/route.js';
-import {db,transaction,dataJson} from './database/db.js';
-import {found,requireThat} from './common/problem.js';
-import {csrf} from './common/crypto.js';
-import {audit} from './common/audit.js';
-import {env} from './config/env.js';
-import {roles,can} from './auth/permissions.js';
+import { z } from 'zod';
+import type { Route } from './common/route.js';
+import { db, transaction, dataJson } from './database/db.js';
+import { found, requireThat } from './common/problem.js';
+import { csrf } from './common/crypto.js';
+import { audit } from './common/audit.js';
+import { env } from './config/env.js';
+import { roles, can } from './auth/permissions.js';
 import * as catalogue from './modules/catalogue.js';
 import * as cart from './modules/cart.js';
 import * as checkout from './modules/checkout.js';
 import * as orders from './modules/orders.js';
 import * as ops from './modules/operations.js';
-import {handlePayment} from './modules/payments.js';
-import {verifyPayHere} from './integrations/payments.js';
-import {product} from './contracts/product.js';
-import {cartItem} from './contracts/cartItem.js';
-import {cartQuantity} from './contracts/cartQuantity.js';
-import {coupon} from './contracts/coupon.js';
-import {quote} from './contracts/quote.js';
-import {checkout as checkoutSchema} from './contracts/checkout.js';
-import {adjustment} from './contracts/adjustment.js';
-import {supplier} from './contracts/supplier.js';
-import {purchase} from './contracts/purchase.js';
-import {receipt} from './contracts/receipt.js';
-import {fulfillment} from './contracts/fulfillment.js';
-import {refund} from './contracts/refund.js';
-import {request} from './contracts/request.js';
-import {decision} from './contracts/decision.js';
-import {inspection} from './contracts/inspection.js';
-import {content} from './contracts/content.js';
-import {shipping} from './contracts/shipping.js';
-import {promotion} from './contracts/promotion.js';
-import {review} from './contracts/review.js';
-import {staff} from './contracts/staff.js';
-import {note} from './contracts/note.js';
-import {recovery} from './contracts/recovery.js';
-import {exchange} from './contracts/exchange.js';
-import {profile} from './contracts/profile.js';
-import {addressBook} from './contracts/addressBook.js';
-import {collection} from './contracts/collection.js';
-export const routes:Route[]=[];
-const page=(items:unknown[])=>({items,pageInfo:{nextCursor:null,hasNextPage:false}});
-routes.push({method:'GET',path:'csrf',summary:"Get actor-bound CSRF token",handler:async ctx=>({token:csrf(ctx.actor)})});
-routes.push({method:'GET',path:'store-config',summary:"Read public store configuration",handler:async()=>({name:'NITHYAKALYANI BOUTIQUE',demo:env.APP_ENV!=='production',locales:['en'],currencies:['LKR'],termsVersion:env.TERMS_VERSION,shippingCountries:[...new Set((await db.shippingMethod.findMany({where:{enabled:true}})).flatMap(s=>s.countries))],contact:(await db.storeSetting.findUnique({where:{key:'contact'}}))?.value||null})});
-routes.push({method:'GET',path:'products',summary:"Search published sarees",handler:async ctx=>catalogue.products(ctx.req.query)});
-routes.push({method:'GET',path:'products/:slug',summary:"Read a published saree",handler:async(_c,_b,p)=>catalogue.product(p.slug)});
-routes.push({method:'GET',path:'products/:id/related',summary:"Find related published sarees",handler:async(_c,_b,p)=>{const product=found(await db.product.findFirst({where:{id:p.id,status:'ACTIVE'}}));return catalogue.products({fabric:product.fabric,limit:4});}});
-routes.push({method:'GET',path:'catalogue/facets',summary:"Read published search facets",handler:async()=>catalogue.facets()});
-routes.push({method:'GET',path:'search/suggestions',summary:"Suggest published sarees",handler:async ctx=>String(ctx.req.query.q||'').length<2?page([]):catalogue.products({q:ctx.req.query.q,limit:6})});
-routes.push({method:'GET',path:'collections',summary:"List published collections",handler:async()=>page(await db.collection.findMany({where:{status:'PUBLISHED'},orderBy:{position:'asc'}}))});
-routes.push({method:'GET',path:'collections/:slug',summary:"Read collection content",handler:async(_c,_b,p)=>found(await db.collection.findFirst({where:{slug:p.slug,status:'PUBLISHED'}}))});
-routes.push({method:'GET',path:'content',summary:"List published editorial content",handler:async ctx=>page(await db.contentPage.findMany({where:{status:'PUBLISHED',locale:'en',...(ctx.req.query.kind?{kind:String(ctx.req.query.kind)}:{})},take:100}))});
-routes.push({method:'GET',path:'content/:slug',summary:"Read published content",handler:async(_c,_b,p)=>found(await db.contentPage.findFirst({where:{slug:p.slug,status:'PUBLISHED',locale:'en'}}))});
-routes.push({method:'GET',path:'cart',summary:"Read current cart",handler:async ctx=>cart.getCart(ctx)});
-routes.push({method:'POST',path:'cart/items',summary:"Add a variant to the cart",schema:cartItem,handler:async(c,b)=>cart.changeCart(c,'add',b)});
-routes.push({method:'PATCH',path:'cart/items/:id',summary:"Update cart quantity",schema:cartQuantity,handler:async(c,b,p)=>cart.changeCart(c,'quantity',b,p.id)});
-routes.push({method:'DELETE',path:'cart/items/:id',summary:"Remove cart line",handler:async(c,b,p)=>cart.changeCart(c,'delete',b,p.id)});
-routes.push({method:'POST',path:'cart/coupon',summary:"Select a promotion code",schema:coupon,handler:async(c,b)=>cart.changeCart(c,'coupon',b)});
-routes.push({method:'DELETE',path:'cart/coupon',summary:"Remove selected promotion",handler:async(c,b)=>cart.changeCart(c,'remove-coupon',b)});
-routes.push({method:'POST',path:'cart/merge',summary:"Resolve signed-in cart",authenticated:true,handler:async c=>cart.mergeCart(c)});
-routes.push({method:'POST',path:'checkout/quotes',summary:"Create immutable checkout quote",schema:quote,status:201,handler:async(c,b)=>checkout.createQuote(c,b)});
-routes.push({method:'GET',path:'checkout/quotes/:id',summary:"Read owned checkout quote",handler:async(c,_b,p)=>found(await db.checkoutSession.findFirst({where:{id:p.id,actor:c.actor}}))});
-routes.push({method:'POST',path:'checkout/orders',summary:"Reserve stock and place an order",schema:checkoutSchema,status:201,handler:async(c,b)=>checkout.placeOrder(c,b)});
-routes.push({method:'POST',path:'webhooks/payhere',summary:"Verify and persist PayHere callback",webhook:true,handler:async(_c,b)=>{requireThat(env.PAYMENT_PROVIDER==='payhere','NOT_FOUND','Provider is disabled.',404);return handlePayment(verifyPayHere(b));}});
-routes.push({method:'POST',path:'demo/payments',summary:"Simulate local payment notification",schema:z.object({reference:z.uuid(),outcome:z.enum(['SUCCEEDED','FAILED','CANCELLED','PENDING','CHARGEBACK'])}).strict(),handler:async(c,b)=>{requireThat(env.APP_ENV!=='production'&&env.PAYMENT_PROVIDER==='fake','NOT_FOUND','Demo endpoint is disabled.',404);const attempt=found(await db.paymentAttempt.findUnique({where:{merchantReference:String(b.reference)}}));await orders.ownedOrder(c,attempt.orderId);return handlePayment({reference:attempt.merchantReference,amount:attempt.amountMinor,currency:attempt.currency,status:String(b.outcome),providerReference:'fake-'+attempt.id});}});
-routes.push({method:'GET',path:'orders',summary:"List my orders",authenticated:true,handler:async c=>page(await db.order.findMany({where:{userId:c.userId},select:{id:true,reference:true,totalMinor:true,currency:true,status:true,paymentSummary:true,fulfillmentSummary:true,createdAt:true},orderBy:{createdAt:'desc'},take:100}))});
-routes.push({method:'GET',path:'orders/:id',summary:"Read authorized order snapshot",handler:async(c,_b,p)=>orders.orderView(c,p.id)});
-routes.push({method:'GET',path:'orders/:id/payment-status',summary:"Read independent financial and fulfillment states",handler:async(c,_b,p)=>{const o=await orders.ownedOrder(c,p.id);return {paymentSummary:o.paymentSummary,financialFlag:o.financialFlag,fulfillmentException:o.fulfillmentException,latestAttempt:o.attempts.at(-1)?.status,fulfillmentSummary:o.fulfillmentSummary};}});
-routes.push({method:'GET',path:'orders/:id/shipments',summary:"Read authorized shipment tracking",handler:async(c,_b,p)=>page((await orders.ownedOrder(c,p.id)).shipments)});
-routes.push({method:'POST',path:'orders/:id/payment-attempts',summary:"Safely retry an unpaid order",handler:async(c,_b,p)=>orders.retryPayment(c,p.id)});
-routes.push({method:'POST',path:'orders/:id/cancellation-requests',summary:"Request cancellation",schema:request,status:201,handler:async(c,b,p)=>orders.serviceRequest(c,p.id,'CANCELLATION',b)});
-routes.push({method:'POST',path:'orders/:id/return-requests',summary:"Request return",schema:request,status:201,handler:async(c,b,p)=>orders.serviceRequest(c,p.id,'RETURN',b)});
-routes.push({method:'GET',path:'return-requests/:id',summary:"Read authorized request progress",handler:async(c,_b,p)=>{const r=found(await db.serviceRequest.findUnique({where:{id:p.id}}));await orders.ownedOrder(c,r.orderId);return r;}});
-routes.push({method:'POST',path:'orders/access/request',summary:"Request private order access code",schema:recovery,status:202,handler:async(_c,b)=>orders.requestAccess(b)});
-routes.push({method:'POST',path:'orders/access',summary:"Exchange one-use access code",schema:exchange,handler:async(c,b)=>orders.exchangeAccess(c,b)});
-routes.push({method:'GET',path:'me',summary:"Read my profile and capabilities",authenticated:true,handler:async c=>({user:await db.user.findUnique({where:{id:c.userId},select:{id:true,name:true,email:true,emailVerified:true,twoFactorEnabled:true}}),capabilities:c.capabilities})});
-routes.push({method:'PATCH',path:'me',summary:"Update profile display name",authenticated:true,schema:profile,handler:async(c,b)=>db.user.update({where:{id:c.userId},data:{name:String(b.name)},select:{id:true,name:true,email:true}})});
-routes.push({method:'GET',path:'me/addresses',summary:"Read my address book",authenticated:true,handler:async c=>page(await db.address.findMany({where:{userId:c.userId}}))});
-routes.push({method:'POST',path:'me/addresses',summary:"Save a delivery address",authenticated:true,schema:addressBook,status:201,handler:async(c,b)=>transaction(async tx=>{if(b.isDefault)await tx.address.updateMany({where:{userId:c.userId},data:{isDefault:false}});return tx.address.create({data:{userId:c.userId!,label:String(b.label),address:dataJson(b.address),isDefault:Boolean(b.isDefault)}});})});
-routes.push({method:'DELETE',path:'me/addresses/:id',summary:"Delete my saved address",authenticated:true,handler:async(c,_b,p)=>{found(await db.address.findFirst({where:{id:p.id,userId:c.userId}}));await db.address.delete({where:{id:p.id}});return {deleted:true};}});
-routes.push({method:'GET',path:'wishlist',summary:"Read my wishlist",authenticated:true,handler:async c=>{const saved=await db.wishlistItem.findMany({where:{userId:c.userId}});return page((await db.product.findMany({where:{id:{in:saved.map(s=>s.productId)},status:'ACTIVE'},include:catalogue.productInclude})).map(catalogue.publicProduct));}});
-routes.push({method:'POST',path:'wishlist/items',summary:"Save a published product",authenticated:true,schema:z.object({productId:z.uuid()}).strict(),handler:async(c,b)=>{found(await db.product.findFirst({where:{id:String(b.productId),status:'ACTIVE'}}));return db.wishlistItem.upsert({where:{userId_productId:{userId:c.userId!,productId:String(b.productId)}},create:{userId:c.userId!,productId:String(b.productId)},update:{}});}});
-routes.push({method:'DELETE',path:'wishlist/items/:id',summary:"Remove a saved product",authenticated:true,handler:async(c,_b,p)=>{await db.wishlistItem.deleteMany({where:{userId:c.userId,productId:p.id}});return {deleted:true};}});
-routes.push({method:'GET',path:'products/:id/reviews',summary:"Read moderated purchaser reviews",handler:async(_c,_b,p)=>page(await db.review.findMany({where:{productId:p.id,status:'PUBLISHED'},select:{id:true,rating:true,body:true,createdAt:true},take:100}))});
-routes.push({method:'POST',path:'reviews',summary:"Submit verified purchaser review",authenticated:true,schema:review,status:201,handler:async(c,b)=>{const line=found(await db.orderLine.findFirst({where:{id:String(b.orderLineId),order:{userId:c.userId,paymentSummary:'PAID'},dispatched:{gt:0}},include:{variant:true}}));return db.review.create({data:{userId:c.userId!,productId:line.variant.productId,orderLineId:line.id,rating:Number(b.rating),body:String(b.body)}});}});
-routes.push({method:'GET',path:'admin/products',summary:"Inspect products",permission:'catalog.read',handler:async()=>page(await db.product.findMany({include:{variants:true},take:100,orderBy:{updatedAt:'desc'}}))});
-routes.push({method:'GET',path:'admin/collections',summary:"Inspect collections",permission:'content.write',handler:async()=>page(await db.collection.findMany({include:{products:true},take:100}))});
-routes.push({method:'GET',path:'admin/inventory',summary:"Inspect inventory",permission:'inventory.read',handler:async()=>page(await db.inventoryBalance.findMany({include:{variant:{include:{product:true}},warehouse:true},take:100}))});
-routes.push({method:'GET',path:'admin/inventory/movements',summary:"Inspect inventory/movements",permission:'inventory.read',handler:async()=>page(await db.inventoryMovement.findMany({take:100,orderBy:{createdAt:'desc'}}))});
-routes.push({method:'GET',path:'admin/suppliers',summary:"Inspect suppliers",permission:'purchasing.read',handler:async()=>page(await db.supplier.findMany({take:100}))});
-routes.push({method:'GET',path:'admin/purchase-orders',summary:"Inspect purchase-orders",permission:'purchasing.read',handler:async()=>page(await db.purchaseOrder.findMany({include:{supplier:true,lines:true,receipts:{include:{lines:true}}},take:100,orderBy:{createdAt:'desc'}}))});
-routes.push({method:'GET',path:'admin/orders',summary:"Inspect orders",permission:'orders.read',handler:async c=>{const rows=await db.order.findMany({include:{lines:true,shipments:{include:{items:true}},refunds:true,requests:true},take:100,orderBy:{createdAt:'desc'}});return page(rows.map(o=>({...o,lines:o.lines.map(l=>({...l,costSnapshot:can(c.capabilities,'finance.read')?l.costSnapshot:undefined}))})));}});
-routes.push({method:'GET',path:'admin/customers',summary:"Inspect customers",permission:'customers.support',handler:async()=>page(await db.user.findMany({select:{id:true,name:true,email:true,emailVerified:true,createdAt:true},take:100}))});
-routes.push({method:'GET',path:'admin/discounts',summary:"Inspect discounts",permission:'promotions.manage',handler:async()=>page(await db.promotion.findMany({take:100}))});
-routes.push({method:'GET',path:'admin/shipping-methods',summary:"Inspect shipping-methods",permission:'settings.manage',handler:async()=>page(await db.shippingMethod.findMany({take:100}))});
-routes.push({method:'GET',path:'admin/returns',summary:"Inspect returns",permission:'returns.manage',handler:async()=>page(await db.serviceRequest.findMany({include:{order:{select:{reference:true}}},take:100,orderBy:{createdAt:'desc'}}))});
-routes.push({method:'GET',path:'admin/content',summary:"Inspect content",permission:'content.write',handler:async()=>page(await db.contentPage.findMany({take:100}))});
-routes.push({method:'GET',path:'admin/staff',summary:"Inspect staff",permission:'staff.manage',handler:async()=>page(await db.staffGrant.findMany({take:100}))});
-routes.push({method:'GET',path:'admin/audit-events',summary:"Inspect audit-events",permission:'audit.read',handler:async()=>page(await db.auditEvent.findMany({take:100,orderBy:{createdAt:'desc'}}))});
-routes.push({method:'GET',path:'admin/reviews',summary:"Inspect reviews",permission:'content.publish',handler:async()=>page(await db.review.findMany({take:100}))});
-routes.push({method:'GET',path:'admin/settings',summary:"Inspect settings",permission:'settings.manage',handler:async()=>page(await db.storeSetting.findMany({take:100}))});
-routes.push({method:'GET',path:'admin/reconciliation',summary:"Inspect reconciliation",permission:'finance.read',handler:async()=>page(await db.reconciliationIssue.findMany({take:100,orderBy:{createdAt:'desc'}}))});
-routes.push({method:'GET',path:'admin/jobs',summary:"Inspect jobs",permission:'settings.manage',handler:async()=>page(await db.outboxEvent.findMany({select:{id:true,kind:true,attempts:true,processedAt:true,lastError:true,createdAt:true},take:100,orderBy:{createdAt:'desc'}}))});
-routes.push({method:'GET',path:'admin/dashboard',summary:"Read staff overview",permission:'orders.read',handler:async()=>({orders:await db.order.count(),pending:await db.order.count({where:{status:'PENDING_PAYMENT'}}),paid:await db.order.count({where:{paymentSummary:'PAID'}}),products:await db.product.count({where:{status:'ACTIVE'}}),stock:await db.inventoryBalance.aggregate({_sum:{onHand:true,reserved:true}}),recentOrders:await db.order.findMany({select:{id:true,reference:true,status:true,paymentSummary:true,totalMinor:true,createdAt:true},orderBy:{createdAt:'desc'},take:6})})});
-routes.push({method:'POST',path:'admin/products',summary:"Create a draft product",permission:'catalog.write',schema:product,status:201,handler:async(c,b)=>transaction(async tx=>{const {sku,priceMinor,weightG,...fields}=product.parse(b);const p=await tx.product.create({data:{...fields,images:dataJson(fields.images),variants:{create:{sku,title:'Default',optionSignature:'default',weightG,priceMinor:BigInt(priceMinor)}}},include:{variants:true}});await audit(tx,c,'product.create',p.id);return p;})});
-routes.push({method:'PATCH',path:'admin/products/:id',summary:"Edit catalogue with version check",permission:'catalog.write',schema:product.extend({version:z.number().int().positive()}),handler:async(c,b,p)=>transaction(async tx=>{const old=found(await tx.product.findUnique({where:{id:p.id},include:{variants:true}}));requireThat(old.version===b.version,'VERSION_CONFLICT','Product changed; reload before saving.',409);const {sku,priceMinor,weightG,...fields}=product.parse(Object.fromEntries(Object.entries(b).filter(([k])=>k!=='version')));const result=await tx.product.update({where:{id:p.id},data:{...fields,images:dataJson(fields.images),version:{increment:1}}});await tx.variant.update({where:{id:old.variants[0].id},data:{sku,priceMinor:BigInt(priceMinor),weightG,version:{increment:1}}});await audit(tx,c,'product.update',p.id);return result;})});
-routes.push({method:'POST',path:'admin/products/:id/publish',summary:"Validate and publish a saree",permission:'catalog.publish',schema:z.object({version:z.number().int().positive()}).strict(),handler:async(c,b,p)=>transaction(async tx=>{const product=found(await tx.product.findUnique({where:{id:p.id},include:{variants:true}}));requireThat(product.version===b.version,'VERSION_CONFLICT','Product changed.',409);requireThat(product.title&&product.description&&product.care&&product.lengthMm>0&&product.widthMm>0&&(product.images as unknown[]).length>0&&product.variants.some(v=>v.active&&v.priceMinor>0n&&v.weightG>0),'INCOMPLETE_PRODUCT','Complete product details and imagery before publication.');requireThat(env.APP_ENV!=='production'||!product.demo,'DEMO_PRODUCT','Demo products cannot be published in production.');const result=await tx.product.update({where:{id:p.id},data:{status:'ACTIVE',publishedAt:new Date(),version:{increment:1}}});await audit(tx,c,'product.publish',p.id);return result;})});
-routes.push({method:'DELETE',path:'admin/products/:id',summary:"Archive a product",permission:'catalog.write',handler:async(c,_b,p)=>transaction(async tx=>{const result=await tx.product.update({where:{id:p.id},data:{status:'ARCHIVED',version:{increment:1}}});await audit(tx,c,'product.archive',p.id);return result;})});
-routes.push({method:'POST',path:'admin/collections',summary:"Create curated collection",permission:'content.write',schema:collection,status:201,handler:async(c,b)=>transaction(async tx=>{const v=collection.parse(b);const {productIds,...fields}=v;const result=await tx.collection.create({data:{...fields,products:{create:productIds.map((productId,position)=>({productId,position}))}}});await audit(tx,c,'collection.create',result.id);return result;})});
-routes.push({method:'POST',path:'admin/inventory/adjustments',summary:"Post reasoned inventory movement",permission:'inventory.adjust',schema:adjustment,handler:async(c,b)=>ops.adjustStock(c,b)});
-routes.push({method:'POST',path:'admin/suppliers',summary:"Create supplier record",permission:'purchasing.write',schema:supplier,status:201,handler:async(c,b)=>transaction(async tx=>{const result=await tx.supplier.create({data:supplier.parse(b)});await audit(tx,c,'supplier.create',result.id);return result;})});
-routes.push({method:'POST',path:'admin/purchase-orders',summary:"Order stock from a supplier",permission:'purchasing.write',schema:purchase,status:201,handler:async(c,b)=>ops.createPurchase(c,b)});
-routes.push({method:'POST',path:'admin/purchase-orders/:id/receipts',summary:"Receive stock and allocate landed costs",permission:'purchasing.write',schema:receipt,handler:async(c,b,p)=>ops.receivePurchase(c,p.id,b)});
-routes.push({method:'GET',path:'admin/orders/:id',summary:"Read operational order",permission:'orders.read',handler:async(c,_b,p)=>{const o=found(await db.order.findUnique({where:{id:p.id},include:{lines:true,transactions:true,attempts:true,shipments:{include:{items:true}},refunds:true,requests:true}}));return {...o,lines:o.lines.map(l=>({...l,costSnapshot:can(c.capabilities,'finance.read')?l.costSnapshot:undefined}))};}});
-routes.push({method:'POST',path:'admin/orders/:id/notes',summary:"Add internal support note",permission:'orders.manage',schema:note,status:201,handler:async(c,b,p)=>transaction(async tx=>{const result=await tx.orderNote.create({data:{orderId:p.id,authorId:c.userId!,body:String(b.body)}});await audit(tx,c,'order.note',p.id);return result;})});
-routes.push({method:'POST',path:'admin/orders/:id/fulfillments',summary:"Allocate partial shipment",permission:'fulfillment.manage',schema:fulfillment,status:201,handler:async(c,b,p)=>ops.createShipment(c,p.id,b)});
-routes.push({method:'POST',path:'admin/fulfillments/:id/dispatch',summary:"Dispatch allocated shipment once",permission:'fulfillment.manage',handler:async(c,_b,p)=>ops.dispatch(c,p.id)});
-routes.push({method:'POST',path:'admin/orders/:id/refunds',summary:"Queue a finance-authorized refund",permission:'refunds.issue',schema:refund,status:202,handler:async(c,b,p)=>ops.requestRefund(c,p.id,b)});
-routes.push({method:'POST',path:'admin/return-requests/:id/decisions',summary:"Decide return or cancellation request",permission:'returns.manage',schema:decision,handler:async(c,b,p)=>ops.decideRequest(c,p.id,b)});
-routes.push({method:'POST',path:'admin/returns/:id/receipts',summary:"Inspect and restock returned goods",permission:'returns.manage',schema:inspection,handler:async(c,b,p)=>ops.inspectReturn(c,p.id,b)});
-routes.push({method:'POST',path:'admin/discounts',summary:"Create a scheduled promotion",permission:'promotions.manage',schema:promotion,status:201,handler:async(c,b)=>transaction(async tx=>{const v=promotion.parse(b);const result=await tx.promotion.create({data:{...v,amountMinor:v.amountMinor?BigInt(v.amountMinor):null,minimumMinor:BigInt(v.minimumMinor),maximumMinor:v.maximumMinor?BigInt(v.maximumMinor):null,startsAt:new Date(v.startsAt),endsAt:new Date(v.endsAt)}});await audit(tx,c,'promotion.create',result.id);return result;})});
-routes.push({method:'POST',path:'admin/shipping-methods',summary:"Configure delivery coverage and rate",permission:'settings.manage',schema:shipping,status:201,handler:async(c,b)=>transaction(async tx=>{const v=shipping.parse(b);const result=await tx.shippingMethod.create({data:{...v,priceMinor:BigInt(v.priceMinor)}});await audit(tx,c,'shipping.create',result.id);return result;})});
-routes.push({method:'POST',path:'admin/content',summary:"Create editorial or policy draft",permission:'content.write',schema:content,status:201,handler:async(c,b)=>transaction(async tx=>{const v=content.parse(b);requireThat(v.status!=='PUBLISHED'||can(c.capabilities,'content.publish'),'FORBIDDEN','Publishing permission is required.',403);const result=await tx.contentPage.create({data:v});await audit(tx,c,'content.create',result.id);return result;})});
-routes.push({method:'PATCH',path:'admin/content/:id',summary:"Update structured content with conflict check",permission:'content.write',schema:content,handler:async(c,b,p)=>transaction(async tx=>{const v=content.parse(b);const old=found(await tx.contentPage.findUnique({where:{id:p.id}}));requireThat(old.version===v.version,'VERSION_CONFLICT','Content changed.',409);requireThat(v.status!=='PUBLISHED'||can(c.capabilities,'content.publish'),'FORBIDDEN','Publishing permission is required.',403);const result=await tx.contentPage.update({where:{id:p.id},data:{...v,version:{increment:1}}});await audit(tx,c,'content.update',p.id);return result;})});
-routes.push({method:'POST',path:'admin/reviews/:id/moderation',summary:"Moderate verified review",permission:'content.publish',schema:z.object({status:z.enum(['PUBLISHED','REJECTED'])}).strict(),handler:async(c,b,p)=>transaction(async tx=>{const result=await tx.review.update({where:{id:p.id},data:{status:String(b.status)}});await audit(tx,c,'review.moderate',p.id,{status:b.status});return result;})});
-routes.push({method:'POST',path:'admin/staff',summary:"Assign explicit staff capabilities",permission:'staff.manage',schema:staff,handler:async(c,b)=>transaction(async tx=>{const v=staff.parse(b);requireThat(v.userId!==c.userId,'SELF_CHANGE','Ask another owner to change your access.',409);found(await tx.user.findUnique({where:{id:v.userId}}));const prior=await tx.staffGrant.findUnique({where:{userId:v.userId}});if(prior?.role==='OWNER'&&(!v.active||v.role!=='OWNER'))requireThat(await tx.staffGrant.count({where:{role:'OWNER',active:true}})>1,'LAST_OWNER','Keep at least one active owner.',409);const result=await tx.staffGrant.upsert({where:{userId:v.userId},create:{...v,capabilities:roles[v.role],grantedBy:c.userId!},update:{...v,capabilities:roles[v.role]}});await tx.session.deleteMany({where:{userId:v.userId}});await audit(tx,c,'staff.assign',v.userId,{role:v.role,active:v.active});return result;})});
-routes.push({method:'GET',path:'admin/reports/sales',summary:"Read sales and estimated acquisition margin",permission:'finance.read',handler:async ctx=>{const from=new Date(String(ctx.req.query.from||new Date(Date.now()-30*86400000).toISOString()));const to=new Date(String(ctx.req.query.to||new Date().toISOString()));requireThat(!isNaN(+from)&&!isNaN(+to)&&to>from&&+to-+from<=366*86400000,'INVALID_RANGE','Choose a date range of at most 366 days.',400);const rows=await db.order.findMany({where:{createdAt:{gte:from,lte:to},paymentSummary:{not:'UNPAID'}},include:{lines:true,transactions:true}});const captured=rows.flatMap(o=>o.transactions).filter(t=>t.kind==='CAPTURE').reduce((s,t)=>s+t.amountMinor,0n);const refunded=rows.flatMap(o=>o.transactions).filter(t=>t.kind==='REFUND').reduce((s,t)=>s+t.amountMinor,0n);const lines=rows.flatMap(o=>o.lines);const covered=lines.filter(l=>(l.costSnapshot as {status:string}).status==='AVAILABLE');return {from,to,timeZone:'Asia/Colombo',currency:'LKR',orderCount:rows.length,capturedMinor:captured,refundedMinor:refunded,costCoverage:{covered:covered.length,total:lines.length},estimatedAcquisitionMarginMinor:covered.reduce((s,l)=>s+l.netMinor-BigInt((l.costSnapshot as {totalMinor:string}).totalMinor),0n),label:'Estimated acquisition margin; excludes uncovered lines, overheads, tax and refund adjustments.'};}});
-routes.push({method:'GET',path:'admin/mailbox',summary:"Read local development mailbox",permission:'settings.manage',handler:async()=>{requireThat(env.APP_ENV!=='production'&&env.EMAIL_PROVIDER==='local','NOT_FOUND','Local mailbox is disabled.',404);return page(await db.notification.findMany({take:100,orderBy:{createdAt:'desc'}}));}});
-routes.push({method:'POST',path:'admin/settings/contact',summary:'Update approved support contacts',permission:'settings.manage',schema:z.object({email:z.email(),phone:z.string().min(7).max(30),address:z.string().min(5).max(500)}).strict(),handler:async(c,b)=>transaction(async tx=>{const result=await tx.storeSetting.upsert({where:{key:'contact'},create:{key:'contact',value:dataJson(b)},update:{value:dataJson(b),version:{increment:1}}});await audit(tx,c,'settings.contact',result.id);return result;})});
-routes.push({method:'POST',path:'admin/settings/tax',summary:'Update merchant-approved exclusive tax rate',permission:'settings.manage',schema:z.object({basisPoints:z.number().int().min(0).max(10000),approved:z.literal(true)}).strict(),handler:async(c,b)=>transaction(async tx=>{const result=await tx.storeSetting.upsert({where:{key:'tax'},create:{key:'tax',value:dataJson({...b,treatment:'EXCLUSIVE'})},update:{value:dataJson({...b,treatment:'EXCLUSIVE'}),version:{increment:1}}});await audit(tx,c,'settings.tax',result.id,{basisPoints:b.basisPoints});return result;})});
+import { handlePayment } from './modules/payments.js';
+import { verifyPayHere } from './integrations/payments.js';
+import { product } from './contracts/product.js';
+import { cartItem } from './contracts/cartItem.js';
+import { cartQuantity } from './contracts/cartQuantity.js';
+import { coupon } from './contracts/coupon.js';
+import { quote } from './contracts/quote.js';
+import { checkout as checkoutSchema } from './contracts/checkout.js';
+import { adjustment } from './contracts/adjustment.js';
+import { supplier } from './contracts/supplier.js';
+import { purchase } from './contracts/purchase.js';
+import { receipt } from './contracts/receipt.js';
+import { fulfillment } from './contracts/fulfillment.js';
+import { refund } from './contracts/refund.js';
+import { request } from './contracts/request.js';
+import { decision } from './contracts/decision.js';
+import { inspection } from './contracts/inspection.js';
+import { content } from './contracts/content.js';
+import { shipping } from './contracts/shipping.js';
+import { promotion } from './contracts/promotion.js';
+import { review } from './contracts/review.js';
+import { staff } from './contracts/staff.js';
+import { note } from './contracts/note.js';
+import { recovery } from './contracts/recovery.js';
+import { exchange } from './contracts/exchange.js';
+import { profile } from './contracts/profile.js';
+import { addressBook } from './contracts/addressBook.js';
+import { collection } from './contracts/collection.js';
+export const routes: Route[] = [];
+const page = (items: unknown[]) => ({ items, pageInfo: { nextCursor: null, hasNextPage: false } });
+routes.push({
+  method: 'GET',
+  path: 'csrf',
+  summary: 'Get actor-bound CSRF token',
+  handler: async (ctx) => ({ token: csrf(ctx.actor) }),
+});
+routes.push({
+  method: 'GET',
+  path: 'store-config',
+  summary: 'Read public store configuration',
+  handler: async () => ({
+    name: 'NITHYAKALYANI BOUTIQUE',
+    demo: env.APP_ENV !== 'production',
+    locales: ['en'],
+    currencies: ['LKR'],
+    termsVersion: env.TERMS_VERSION,
+    shippingCountries: [
+      ...new Set(
+        (await db.shippingMethod.findMany({ where: { enabled: true } })).flatMap(
+          (s) => s.countries,
+        ),
+      ),
+    ],
+    contact: (await db.storeSetting.findUnique({ where: { key: 'contact' } }))?.value || null,
+  }),
+});
+routes.push({
+  method: 'GET',
+  path: 'products',
+  summary: 'Search published sarees',
+  handler: async (ctx) => catalogue.products(ctx.req.query),
+});
+routes.push({
+  method: 'GET',
+  path: 'products/:slug',
+  summary: 'Read a published saree',
+  handler: async (_c, _b, p) => catalogue.product(p.slug),
+});
+routes.push({
+  method: 'GET',
+  path: 'products/:id/related',
+  summary: 'Find related published sarees',
+  handler: async (_c, _b, p) => {
+    const product = found(await db.product.findFirst({ where: { id: p.id, status: 'ACTIVE' } }));
+    return catalogue.products({ fabric: product.fabric, limit: 4 });
+  },
+});
+routes.push({
+  method: 'GET',
+  path: 'catalogue/facets',
+  summary: 'Read published search facets',
+  handler: async () => catalogue.facets(),
+});
+routes.push({
+  method: 'GET',
+  path: 'search/suggestions',
+  summary: 'Suggest published sarees',
+  handler: async (ctx) =>
+    String(ctx.req.query.q || '').length < 2
+      ? page([])
+      : catalogue.products({ q: ctx.req.query.q, limit: 6 }),
+});
+routes.push({
+  method: 'GET',
+  path: 'collections',
+  summary: 'List published collections',
+  handler: async () =>
+    page(
+      await db.collection.findMany({
+        where: { status: 'PUBLISHED' },
+        orderBy: { position: 'asc' },
+      }),
+    ),
+});
+routes.push({
+  method: 'GET',
+  path: 'collections/:slug',
+  summary: 'Read collection content',
+  handler: async (_c, _b, p) =>
+    found(await db.collection.findFirst({ where: { slug: p.slug, status: 'PUBLISHED' } })),
+});
+routes.push({
+  method: 'GET',
+  path: 'content',
+  summary: 'List published editorial content',
+  handler: async (ctx) =>
+    page(
+      await db.contentPage.findMany({
+        where: {
+          status: 'PUBLISHED',
+          locale: 'en',
+          ...(ctx.req.query.kind ? { kind: String(ctx.req.query.kind) } : {}),
+        },
+        take: 100,
+      }),
+    ),
+});
+routes.push({
+  method: 'GET',
+  path: 'content/:slug',
+  summary: 'Read published content',
+  handler: async (_c, _b, p) =>
+    found(
+      await db.contentPage.findFirst({
+        where: { slug: p.slug, status: 'PUBLISHED', locale: 'en' },
+      }),
+    ),
+});
+routes.push({
+  method: 'GET',
+  path: 'cart',
+  summary: 'Read current cart',
+  handler: async (ctx) => cart.getCart(ctx),
+});
+routes.push({
+  method: 'POST',
+  path: 'cart/items',
+  summary: 'Add a variant to the cart',
+  schema: cartItem,
+  handler: async (c, b) => cart.changeCart(c, 'add', b),
+});
+routes.push({
+  method: 'PATCH',
+  path: 'cart/items/:id',
+  summary: 'Update cart quantity',
+  schema: cartQuantity,
+  handler: async (c, b, p) => cart.changeCart(c, 'quantity', b, p.id),
+});
+routes.push({
+  method: 'DELETE',
+  path: 'cart/items/:id',
+  summary: 'Remove cart line',
+  handler: async (c, b, p) => cart.changeCart(c, 'delete', b, p.id),
+});
+routes.push({
+  method: 'POST',
+  path: 'cart/coupon',
+  summary: 'Select a promotion code',
+  schema: coupon,
+  handler: async (c, b) => cart.changeCart(c, 'coupon', b),
+});
+routes.push({
+  method: 'DELETE',
+  path: 'cart/coupon',
+  summary: 'Remove selected promotion',
+  handler: async (c, b) => cart.changeCart(c, 'remove-coupon', b),
+});
+routes.push({
+  method: 'POST',
+  path: 'cart/merge',
+  summary: 'Resolve signed-in cart',
+  authenticated: true,
+  handler: async (c) => cart.mergeCart(c),
+});
+routes.push({
+  method: 'POST',
+  path: 'checkout/quotes',
+  summary: 'Create immutable checkout quote',
+  schema: quote,
+  status: 201,
+  handler: async (c, b) => checkout.createQuote(c, b),
+});
+routes.push({
+  method: 'GET',
+  path: 'checkout/quotes/:id',
+  summary: 'Read owned checkout quote',
+  handler: async (c, _b, p) =>
+    found(await db.checkoutSession.findFirst({ where: { id: p.id, actor: c.actor } })),
+});
+routes.push({
+  method: 'POST',
+  path: 'checkout/orders',
+  summary: 'Reserve stock and place an order',
+  schema: checkoutSchema,
+  status: 201,
+  handler: async (c, b) => checkout.placeOrder(c, b),
+});
+routes.push({
+  method: 'POST',
+  path: 'webhooks/payhere',
+  summary: 'Verify and persist PayHere callback',
+  webhook: true,
+  handler: async (_c, b) => {
+    requireThat(env.PAYMENT_PROVIDER === 'payhere', 'NOT_FOUND', 'Provider is disabled.', 404);
+    return handlePayment(verifyPayHere(b));
+  },
+});
+routes.push({
+  method: 'POST',
+  path: 'demo/payments',
+  summary: 'Simulate local payment notification',
+  schema: z
+    .object({
+      reference: z.uuid(),
+      outcome: z.enum(['SUCCEEDED', 'FAILED', 'CANCELLED', 'PENDING', 'CHARGEBACK']),
+    })
+    .strict(),
+  handler: async (c, b) => {
+    requireThat(
+      env.APP_ENV !== 'production' && env.PAYMENT_PROVIDER === 'fake',
+      'NOT_FOUND',
+      'Demo endpoint is disabled.',
+      404,
+    );
+    const attempt = found(
+      await db.paymentAttempt.findUnique({ where: { merchantReference: String(b.reference) } }),
+    );
+    await orders.ownedOrder(c, attempt.orderId);
+    return handlePayment({
+      reference: attempt.merchantReference,
+      amount: attempt.amountMinor,
+      currency: attempt.currency,
+      status: String(b.outcome),
+      providerReference: 'fake-' + attempt.id,
+    });
+  },
+});
+routes.push({
+  method: 'GET',
+  path: 'orders',
+  summary: 'List my orders',
+  authenticated: true,
+  handler: async (c) =>
+    page(
+      await db.order.findMany({
+        where: { userId: c.userId },
+        select: {
+          id: true,
+          reference: true,
+          totalMinor: true,
+          currency: true,
+          status: true,
+          paymentSummary: true,
+          fulfillmentSummary: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+    ),
+});
+routes.push({
+  method: 'GET',
+  path: 'orders/:id',
+  summary: 'Read authorized order snapshot',
+  handler: async (c, _b, p) => orders.orderView(c, p.id),
+});
+routes.push({
+  method: 'GET',
+  path: 'orders/:id/payment-status',
+  summary: 'Read independent financial and fulfillment states',
+  handler: async (c, _b, p) => {
+    const o = await orders.ownedOrder(c, p.id);
+    return {
+      paymentSummary: o.paymentSummary,
+      financialFlag: o.financialFlag,
+      fulfillmentException: o.fulfillmentException,
+      latestAttempt: o.attempts.at(-1)?.status,
+      fulfillmentSummary: o.fulfillmentSummary,
+    };
+  },
+});
+routes.push({
+  method: 'GET',
+  path: 'orders/:id/shipments',
+  summary: 'Read authorized shipment tracking',
+  handler: async (c, _b, p) => page((await orders.ownedOrder(c, p.id)).shipments),
+});
+routes.push({
+  method: 'POST',
+  path: 'orders/:id/payment-attempts',
+  summary: 'Safely retry an unpaid order',
+  handler: async (c, _b, p) => orders.retryPayment(c, p.id),
+});
+routes.push({
+  method: 'POST',
+  path: 'orders/:id/cancellation-requests',
+  summary: 'Request cancellation',
+  schema: request,
+  status: 201,
+  handler: async (c, b, p) => orders.serviceRequest(c, p.id, 'CANCELLATION', b),
+});
+routes.push({
+  method: 'POST',
+  path: 'orders/:id/return-requests',
+  summary: 'Request return',
+  schema: request,
+  status: 201,
+  handler: async (c, b, p) => orders.serviceRequest(c, p.id, 'RETURN', b),
+});
+routes.push({
+  method: 'GET',
+  path: 'return-requests/:id',
+  summary: 'Read authorized request progress',
+  handler: async (c, _b, p) => {
+    const r = found(await db.serviceRequest.findUnique({ where: { id: p.id } }));
+    await orders.ownedOrder(c, r.orderId);
+    return r;
+  },
+});
+routes.push({
+  method: 'POST',
+  path: 'orders/access/request',
+  summary: 'Request private order access code',
+  schema: recovery,
+  status: 202,
+  handler: async (_c, b) => orders.requestAccess(b),
+});
+routes.push({
+  method: 'POST',
+  path: 'orders/access',
+  summary: 'Exchange one-use access code',
+  schema: exchange,
+  handler: async (c, b) => orders.exchangeAccess(c, b),
+});
+routes.push({
+  method: 'GET',
+  path: 'me',
+  summary: 'Read my profile and capabilities',
+  authenticated: true,
+  handler: async (c) => {
+    const user = found(
+      await db.user.findUnique({
+        where: { id: c.userId },
+        select: { id: true, name: true, email: true, emailVerified: true, twoFactorEnabled: true },
+      }),
+    );
+    return {
+      user: { ...user, twoFactorEnabled: user.twoFactorEnabled === true },
+      capabilities: c.capabilities,
+    };
+  },
+});
+routes.push({
+  method: 'PATCH',
+  path: 'me',
+  summary: 'Update profile display name',
+  authenticated: true,
+  schema: profile,
+  handler: async (c, b) =>
+    db.user.update({
+      where: { id: c.userId },
+      data: { name: String(b.name) },
+      select: { id: true, name: true, email: true },
+    }),
+});
+routes.push({
+  method: 'GET',
+  path: 'me/addresses',
+  summary: 'Read my address book',
+  authenticated: true,
+  handler: async (c) => page(await db.address.findMany({ where: { userId: c.userId } })),
+});
+routes.push({
+  method: 'POST',
+  path: 'me/addresses',
+  summary: 'Save a delivery address',
+  authenticated: true,
+  schema: addressBook,
+  status: 201,
+  handler: async (c, b) =>
+    transaction(async (tx) => {
+      if (b.isDefault)
+        await tx.address.updateMany({ where: { userId: c.userId }, data: { isDefault: false } });
+      return tx.address.create({
+        data: {
+          userId: c.userId!,
+          label: String(b.label),
+          address: dataJson(b.address),
+          isDefault: Boolean(b.isDefault),
+        },
+      });
+    }),
+});
+routes.push({
+  method: 'DELETE',
+  path: 'me/addresses/:id',
+  summary: 'Delete my saved address',
+  authenticated: true,
+  handler: async (c, _b, p) => {
+    found(await db.address.findFirst({ where: { id: p.id, userId: c.userId } }));
+    await db.address.delete({ where: { id: p.id } });
+    return { deleted: true };
+  },
+});
+routes.push({
+  method: 'GET',
+  path: 'wishlist',
+  summary: 'Read my wishlist',
+  authenticated: true,
+  handler: async (c) => {
+    const saved = await db.wishlistItem.findMany({ where: { userId: c.userId } });
+    return page(
+      (
+        await db.product.findMany({
+          where: { id: { in: saved.map((s) => s.productId) }, status: 'ACTIVE' },
+          include: catalogue.productInclude,
+        })
+      ).map(catalogue.publicProduct),
+    );
+  },
+});
+routes.push({
+  method: 'POST',
+  path: 'wishlist/items',
+  summary: 'Save a published product',
+  authenticated: true,
+  schema: z.object({ productId: z.uuid() }).strict(),
+  handler: async (c, b) => {
+    found(await db.product.findFirst({ where: { id: String(b.productId), status: 'ACTIVE' } }));
+    return db.wishlistItem.upsert({
+      where: { userId_productId: { userId: c.userId!, productId: String(b.productId) } },
+      create: { userId: c.userId!, productId: String(b.productId) },
+      update: {},
+    });
+  },
+});
+routes.push({
+  method: 'DELETE',
+  path: 'wishlist/items/:id',
+  summary: 'Remove a saved product',
+  authenticated: true,
+  handler: async (c, _b, p) => {
+    await db.wishlistItem.deleteMany({ where: { userId: c.userId, productId: p.id } });
+    return { deleted: true };
+  },
+});
+routes.push({
+  method: 'GET',
+  path: 'products/:id/reviews',
+  summary: 'Read moderated purchaser reviews',
+  handler: async (_c, _b, p) =>
+    page(
+      await db.review.findMany({
+        where: { productId: p.id, status: 'PUBLISHED' },
+        select: { id: true, rating: true, body: true, createdAt: true },
+        take: 100,
+      }),
+    ),
+});
+routes.push({
+  method: 'POST',
+  path: 'reviews',
+  summary: 'Submit verified purchaser review',
+  authenticated: true,
+  schema: review,
+  status: 201,
+  handler: async (c, b) => {
+    const line = found(
+      await db.orderLine.findFirst({
+        where: {
+          id: String(b.orderLineId),
+          order: { userId: c.userId, paymentSummary: 'PAID' },
+          dispatched: { gt: 0 },
+        },
+        include: { variant: true },
+      }),
+    );
+    return db.review.create({
+      data: {
+        userId: c.userId!,
+        productId: line.variant.productId,
+        orderLineId: line.id,
+        rating: Number(b.rating),
+        body: String(b.body),
+      },
+    });
+  },
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/products',
+  summary: 'Inspect products',
+  permission: 'catalog.read',
+  handler: async () =>
+    page(
+      await db.product.findMany({
+        include: { variants: true },
+        take: 100,
+        orderBy: { updatedAt: 'desc' },
+      }),
+    ),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/collections',
+  summary: 'Inspect collections',
+  permission: 'content.write',
+  handler: async () =>
+    page(await db.collection.findMany({ include: { products: true }, take: 100 })),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/inventory',
+  summary: 'Inspect inventory',
+  permission: 'inventory.read',
+  handler: async () =>
+    page(
+      await db.inventoryBalance.findMany({
+        include: { variant: { include: { product: true } }, warehouse: true },
+        take: 100,
+      }),
+    ),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/inventory/movements',
+  summary: 'Inspect inventory/movements',
+  permission: 'inventory.read',
+  handler: async () =>
+    page(await db.inventoryMovement.findMany({ take: 100, orderBy: { createdAt: 'desc' } })),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/suppliers',
+  summary: 'Inspect suppliers',
+  permission: 'purchasing.read',
+  handler: async () => page(await db.supplier.findMany({ take: 100 })),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/purchase-orders',
+  summary: 'Inspect purchase-orders',
+  permission: 'purchasing.read',
+  handler: async () =>
+    page(
+      await db.purchaseOrder.findMany({
+        include: { supplier: true, lines: true, receipts: { include: { lines: true } } },
+        take: 100,
+        orderBy: { createdAt: 'desc' },
+      }),
+    ),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/orders',
+  summary: 'Inspect orders',
+  permission: 'orders.read',
+  handler: async (c) => {
+    const rows = await db.order.findMany({
+      include: {
+        lines: true,
+        shipments: { include: { items: true } },
+        refunds: true,
+        requests: true,
+      },
+      take: 100,
+      orderBy: { createdAt: 'desc' },
+    });
+    return page(
+      rows.map((o) => ({
+        ...o,
+        lines: o.lines.map((l) => ({
+          ...l,
+          costSnapshot: can(c.capabilities, 'finance.read') ? l.costSnapshot : undefined,
+        })),
+      })),
+    );
+  },
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/customers',
+  summary: 'Inspect customers',
+  permission: 'customers.support',
+  handler: async () =>
+    page(
+      await db.user.findMany({
+        select: { id: true, name: true, email: true, emailVerified: true, createdAt: true },
+        take: 100,
+      }),
+    ),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/discounts',
+  summary: 'Inspect discounts',
+  permission: 'promotions.manage',
+  handler: async () => page(await db.promotion.findMany({ take: 100 })),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/shipping-methods',
+  summary: 'Inspect shipping-methods',
+  permission: 'settings.manage',
+  handler: async () => page(await db.shippingMethod.findMany({ take: 100 })),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/returns',
+  summary: 'Inspect returns',
+  permission: 'returns.manage',
+  handler: async () =>
+    page(
+      await db.serviceRequest.findMany({
+        include: { order: { select: { reference: true } } },
+        take: 100,
+        orderBy: { createdAt: 'desc' },
+      }),
+    ),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/content',
+  summary: 'Inspect content',
+  permission: 'content.write',
+  handler: async () => page(await db.contentPage.findMany({ take: 100 })),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/staff',
+  summary: 'Inspect staff',
+  permission: 'staff.manage',
+  handler: async () => page(await db.staffGrant.findMany({ take: 100 })),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/audit-events',
+  summary: 'Inspect audit-events',
+  permission: 'audit.read',
+  handler: async () =>
+    page(await db.auditEvent.findMany({ take: 100, orderBy: { createdAt: 'desc' } })),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/reviews',
+  summary: 'Inspect reviews',
+  permission: 'content.publish',
+  handler: async () => page(await db.review.findMany({ take: 100 })),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/settings',
+  summary: 'Inspect settings',
+  permission: 'settings.manage',
+  handler: async () => page(await db.storeSetting.findMany({ take: 100 })),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/reconciliation',
+  summary: 'Inspect reconciliation',
+  permission: 'finance.read',
+  handler: async () =>
+    page(await db.reconciliationIssue.findMany({ take: 100, orderBy: { createdAt: 'desc' } })),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/jobs',
+  summary: 'Inspect jobs',
+  permission: 'settings.manage',
+  handler: async () =>
+    page(
+      await db.outboxEvent.findMany({
+        select: {
+          id: true,
+          kind: true,
+          attempts: true,
+          processedAt: true,
+          lastError: true,
+          createdAt: true,
+        },
+        take: 100,
+        orderBy: { createdAt: 'desc' },
+      }),
+    ),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/dashboard',
+  summary: 'Read staff overview',
+  permission: 'orders.read',
+  handler: async () => ({
+    orders: await db.order.count(),
+    pending: await db.order.count({ where: { status: 'PENDING_PAYMENT' } }),
+    paid: await db.order.count({ where: { paymentSummary: 'PAID' } }),
+    products: await db.product.count({ where: { status: 'ACTIVE' } }),
+    stock: await db.inventoryBalance.aggregate({ _sum: { onHand: true, reserved: true } }),
+    recentOrders: await db.order.findMany({
+      select: {
+        id: true,
+        reference: true,
+        status: true,
+        paymentSummary: true,
+        totalMinor: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 6,
+    }),
+  }),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/products',
+  summary: 'Create a draft product',
+  permission: 'catalog.write',
+  schema: product,
+  status: 201,
+  handler: async (c, b) =>
+    transaction(async (tx) => {
+      const { sku, priceMinor, weightG, ...fields } = product.parse(b);
+      const p = await tx.product.create({
+        data: {
+          ...fields,
+          images: dataJson(fields.images),
+          variants: {
+            create: {
+              sku,
+              title: 'Default',
+              optionSignature: 'default',
+              weightG,
+              priceMinor: BigInt(priceMinor),
+            },
+          },
+        },
+        include: { variants: true },
+      });
+      await audit(tx, c, 'product.create', p.id);
+      return p;
+    }),
+});
+routes.push({
+  method: 'PATCH',
+  path: 'admin/products/:id',
+  summary: 'Edit catalogue with version check',
+  permission: 'catalog.write',
+  schema: product.extend({ version: z.number().int().positive() }),
+  handler: async (c, b, p) =>
+    transaction(async (tx) => {
+      const old = found(
+        await tx.product.findUnique({ where: { id: p.id }, include: { variants: true } }),
+      );
+      requireThat(
+        old.version === b.version,
+        'VERSION_CONFLICT',
+        'Product changed; reload before saving.',
+        409,
+      );
+      const { sku, priceMinor, weightG, ...fields } = product.parse(
+        Object.fromEntries(Object.entries(b).filter(([k]) => k !== 'version')),
+      );
+      const result = await tx.product.update({
+        where: { id: p.id },
+        data: { ...fields, images: dataJson(fields.images), version: { increment: 1 } },
+      });
+      await tx.variant.update({
+        where: { id: old.variants[0].id },
+        data: { sku, priceMinor: BigInt(priceMinor), weightG, version: { increment: 1 } },
+      });
+      await audit(tx, c, 'product.update', p.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/products/:id/publish',
+  summary: 'Validate and publish a saree',
+  permission: 'catalog.publish',
+  schema: z.object({ version: z.number().int().positive() }).strict(),
+  handler: async (c, b, p) =>
+    transaction(async (tx) => {
+      const product = found(
+        await tx.product.findUnique({ where: { id: p.id }, include: { variants: true } }),
+      );
+      requireThat(product.version === b.version, 'VERSION_CONFLICT', 'Product changed.', 409);
+      requireThat(
+        product.title &&
+          product.description &&
+          product.care &&
+          product.lengthMm > 0 &&
+          product.widthMm > 0 &&
+          (product.images as unknown[]).length > 0 &&
+          product.variants.some((v) => v.active && v.priceMinor > 0n && v.weightG > 0),
+        'INCOMPLETE_PRODUCT',
+        'Complete product details and imagery before publication.',
+      );
+      requireThat(
+        env.APP_ENV !== 'production' || !product.demo,
+        'DEMO_PRODUCT',
+        'Demo products cannot be published in production.',
+      );
+      const result = await tx.product.update({
+        where: { id: p.id },
+        data: { status: 'ACTIVE', publishedAt: new Date(), version: { increment: 1 } },
+      });
+      await audit(tx, c, 'product.publish', p.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'DELETE',
+  path: 'admin/products/:id',
+  summary: 'Archive a product',
+  permission: 'catalog.write',
+  handler: async (c, _b, p) =>
+    transaction(async (tx) => {
+      const result = await tx.product.update({
+        where: { id: p.id },
+        data: { status: 'ARCHIVED', version: { increment: 1 } },
+      });
+      await audit(tx, c, 'product.archive', p.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/collections',
+  summary: 'Create curated collection',
+  permission: 'content.write',
+  schema: collection,
+  status: 201,
+  handler: async (c, b) =>
+    transaction(async (tx) => {
+      const v = collection.parse(b);
+      const { productIds, ...fields } = v;
+      const result = await tx.collection.create({
+        data: {
+          ...fields,
+          products: { create: productIds.map((productId, position) => ({ productId, position })) },
+        },
+      });
+      await audit(tx, c, 'collection.create', result.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/inventory/adjustments',
+  summary: 'Post reasoned inventory movement',
+  permission: 'inventory.adjust',
+  schema: adjustment,
+  handler: async (c, b) => ops.adjustStock(c, b),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/suppliers',
+  summary: 'Create supplier record',
+  permission: 'purchasing.write',
+  schema: supplier,
+  status: 201,
+  handler: async (c, b) =>
+    transaction(async (tx) => {
+      const result = await tx.supplier.create({ data: supplier.parse(b) });
+      await audit(tx, c, 'supplier.create', result.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/purchase-orders',
+  summary: 'Order stock from a supplier',
+  permission: 'purchasing.write',
+  schema: purchase,
+  status: 201,
+  handler: async (c, b) => ops.createPurchase(c, b),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/purchase-orders/:id/receipts',
+  summary: 'Receive stock and allocate landed costs',
+  permission: 'purchasing.write',
+  schema: receipt,
+  handler: async (c, b, p) => ops.receivePurchase(c, p.id, b),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/orders/:id',
+  summary: 'Read operational order',
+  permission: 'orders.read',
+  handler: async (c, _b, p) => {
+    const o = found(
+      await db.order.findUnique({
+        where: { id: p.id },
+        include: {
+          lines: true,
+          transactions: true,
+          attempts: true,
+          shipments: { include: { items: true } },
+          refunds: true,
+          requests: true,
+        },
+      }),
+    );
+    return {
+      ...o,
+      lines: o.lines.map((l) => ({
+        ...l,
+        costSnapshot: can(c.capabilities, 'finance.read') ? l.costSnapshot : undefined,
+      })),
+    };
+  },
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/orders/:id/notes',
+  summary: 'Add internal support note',
+  permission: 'orders.manage',
+  schema: note,
+  status: 201,
+  handler: async (c, b, p) =>
+    transaction(async (tx) => {
+      const result = await tx.orderNote.create({
+        data: { orderId: p.id, authorId: c.userId!, body: String(b.body) },
+      });
+      await audit(tx, c, 'order.note', p.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/orders/:id/fulfillments',
+  summary: 'Allocate partial shipment',
+  permission: 'fulfillment.manage',
+  schema: fulfillment,
+  status: 201,
+  handler: async (c, b, p) => ops.createShipment(c, p.id, b),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/fulfillments/:id/dispatch',
+  summary: 'Dispatch allocated shipment once',
+  permission: 'fulfillment.manage',
+  handler: async (c, _b, p) => ops.dispatch(c, p.id),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/orders/:id/refunds',
+  summary: 'Queue a finance-authorized refund',
+  permission: 'refunds.issue',
+  schema: refund,
+  status: 202,
+  handler: async (c, b, p) => ops.requestRefund(c, p.id, b),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/return-requests/:id/decisions',
+  summary: 'Decide return or cancellation request',
+  permission: 'returns.manage',
+  schema: decision,
+  handler: async (c, b, p) => ops.decideRequest(c, p.id, b),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/returns/:id/receipts',
+  summary: 'Inspect and restock returned goods',
+  permission: 'returns.manage',
+  schema: inspection,
+  handler: async (c, b, p) => ops.inspectReturn(c, p.id, b),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/discounts',
+  summary: 'Create a scheduled promotion',
+  permission: 'promotions.manage',
+  schema: promotion,
+  status: 201,
+  handler: async (c, b) =>
+    transaction(async (tx) => {
+      const v = promotion.parse(b);
+      const result = await tx.promotion.create({
+        data: {
+          ...v,
+          amountMinor: v.amountMinor ? BigInt(v.amountMinor) : null,
+          minimumMinor: BigInt(v.minimumMinor),
+          maximumMinor: v.maximumMinor ? BigInt(v.maximumMinor) : null,
+          startsAt: new Date(v.startsAt),
+          endsAt: new Date(v.endsAt),
+        },
+      });
+      await audit(tx, c, 'promotion.create', result.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/shipping-methods',
+  summary: 'Configure delivery coverage and rate',
+  permission: 'settings.manage',
+  schema: shipping,
+  status: 201,
+  handler: async (c, b) =>
+    transaction(async (tx) => {
+      const v = shipping.parse(b);
+      const result = await tx.shippingMethod.create({
+        data: { ...v, priceMinor: BigInt(v.priceMinor) },
+      });
+      await audit(tx, c, 'shipping.create', result.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/content',
+  summary: 'Create editorial or policy draft',
+  permission: 'content.write',
+  schema: content,
+  status: 201,
+  handler: async (c, b) =>
+    transaction(async (tx) => {
+      const v = content.parse(b);
+      requireThat(
+        v.status !== 'PUBLISHED' || can(c.capabilities, 'content.publish'),
+        'FORBIDDEN',
+        'Publishing permission is required.',
+        403,
+      );
+      const result = await tx.contentPage.create({ data: v });
+      await audit(tx, c, 'content.create', result.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'PATCH',
+  path: 'admin/content/:id',
+  summary: 'Update structured content with conflict check',
+  permission: 'content.write',
+  schema: content,
+  handler: async (c, b, p) =>
+    transaction(async (tx) => {
+      const v = content.parse(b);
+      const old = found(await tx.contentPage.findUnique({ where: { id: p.id } }));
+      requireThat(old.version === v.version, 'VERSION_CONFLICT', 'Content changed.', 409);
+      requireThat(
+        v.status !== 'PUBLISHED' || can(c.capabilities, 'content.publish'),
+        'FORBIDDEN',
+        'Publishing permission is required.',
+        403,
+      );
+      const result = await tx.contentPage.update({
+        where: { id: p.id },
+        data: { ...v, version: { increment: 1 } },
+      });
+      await audit(tx, c, 'content.update', p.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/reviews/:id/moderation',
+  summary: 'Moderate verified review',
+  permission: 'content.publish',
+  schema: z.object({ status: z.enum(['PUBLISHED', 'REJECTED']) }).strict(),
+  handler: async (c, b, p) =>
+    transaction(async (tx) => {
+      const result = await tx.review.update({
+        where: { id: p.id },
+        data: { status: String(b.status) },
+      });
+      await audit(tx, c, 'review.moderate', p.id, { status: b.status });
+      return result;
+    }),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/staff',
+  summary: 'Assign explicit staff capabilities',
+  permission: 'staff.manage',
+  schema: staff,
+  handler: async (c, b) =>
+    transaction(async (tx) => {
+      const v = staff.parse(b);
+      requireThat(
+        v.userId !== c.userId,
+        'SELF_CHANGE',
+        'Ask another owner to change your access.',
+        409,
+      );
+      found(await tx.user.findUnique({ where: { id: v.userId } }));
+      const prior = await tx.staffGrant.findUnique({ where: { userId: v.userId } });
+      if (prior?.role === 'OWNER' && (!v.active || v.role !== 'OWNER'))
+        requireThat(
+          (await tx.staffGrant.count({ where: { role: 'OWNER', active: true } })) > 1,
+          'LAST_OWNER',
+          'Keep at least one active owner.',
+          409,
+        );
+      const result = await tx.staffGrant.upsert({
+        where: { userId: v.userId },
+        create: { ...v, capabilities: roles[v.role], grantedBy: c.userId! },
+        update: { ...v, capabilities: roles[v.role] },
+      });
+      await tx.session.deleteMany({ where: { userId: v.userId } });
+      await audit(tx, c, 'staff.assign', v.userId, { role: v.role, active: v.active });
+      return result;
+    }),
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/reports/sales',
+  summary: 'Read sales and estimated acquisition margin',
+  permission: 'finance.read',
+  handler: async (ctx) => {
+    const from = new Date(
+      String(ctx.req.query.from || new Date(Date.now() - 30 * 86400000).toISOString()),
+    );
+    const to = new Date(String(ctx.req.query.to || new Date().toISOString()));
+    requireThat(
+      !isNaN(+from) && !isNaN(+to) && to > from && +to - +from <= 366 * 86400000,
+      'INVALID_RANGE',
+      'Choose a date range of at most 366 days.',
+      400,
+    );
+    const rows = await db.order.findMany({
+      where: { createdAt: { gte: from, lte: to }, paymentSummary: { not: 'UNPAID' } },
+      include: { lines: true, transactions: true },
+    });
+    const captured = rows
+      .flatMap((o) => o.transactions)
+      .filter((t) => t.kind === 'CAPTURE')
+      .reduce((s, t) => s + t.amountMinor, 0n);
+    const refunded = rows
+      .flatMap((o) => o.transactions)
+      .filter((t) => t.kind === 'REFUND')
+      .reduce((s, t) => s + t.amountMinor, 0n);
+    const lines = rows.flatMap((o) => o.lines);
+    const covered = lines.filter(
+      (l) => (l.costSnapshot as { status: string }).status === 'AVAILABLE',
+    );
+    return {
+      from,
+      to,
+      timeZone: 'Asia/Colombo',
+      currency: 'LKR',
+      orderCount: rows.length,
+      capturedMinor: captured,
+      refundedMinor: refunded,
+      costCoverage: { covered: covered.length, total: lines.length },
+      estimatedAcquisitionMarginMinor: covered.reduce(
+        (s, l) => s + l.netMinor - BigInt((l.costSnapshot as { totalMinor: string }).totalMinor),
+        0n,
+      ),
+      label:
+        'Estimated acquisition margin; excludes uncovered lines, overheads, tax and refund adjustments.',
+    };
+  },
+});
+routes.push({
+  method: 'GET',
+  path: 'admin/mailbox',
+  summary: 'Read local development mailbox',
+  permission: 'settings.manage',
+  handler: async () => {
+    requireThat(
+      env.APP_ENV !== 'production' && env.EMAIL_PROVIDER === 'local',
+      'NOT_FOUND',
+      'Local mailbox is disabled.',
+      404,
+    );
+    return page(await db.notification.findMany({ take: 100, orderBy: { createdAt: 'desc' } }));
+  },
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/settings/contact',
+  summary: 'Update approved support contacts',
+  permission: 'settings.manage',
+  schema: z
+    .object({
+      email: z.email(),
+      phone: z.string().min(7).max(30),
+      address: z.string().min(5).max(500),
+    })
+    .strict(),
+  handler: async (c, b) =>
+    transaction(async (tx) => {
+      const result = await tx.storeSetting.upsert({
+        where: { key: 'contact' },
+        create: { key: 'contact', value: dataJson(b) },
+        update: { value: dataJson(b), version: { increment: 1 } },
+      });
+      await audit(tx, c, 'settings.contact', result.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/settings/tax',
+  summary: 'Update merchant-approved exclusive tax rate',
+  permission: 'settings.manage',
+  schema: z
+    .object({ basisPoints: z.number().int().min(0).max(10000), approved: z.literal(true) })
+    .strict(),
+  handler: async (c, b) =>
+    transaction(async (tx) => {
+      const result = await tx.storeSetting.upsert({
+        where: { key: 'tax' },
+        create: { key: 'tax', value: dataJson({ ...b, treatment: 'EXCLUSIVE' }) },
+        update: { value: dataJson({ ...b, treatment: 'EXCLUSIVE' }), version: { increment: 1 } },
+      });
+      await audit(tx, c, 'settings.tax', result.id, { basisPoints: b.basisPoints });
+      return result;
+    }),
+});
 
 import * as media from './integrations/media.js';
-routes.push({method:'POST',path:'admin/media/upload-intents',summary:'Authorize bounded image upload',permission:'catalog.write',schema:z.object({mime:z.enum(['image/png','image/jpeg','image/webp']),size:z.number().int().min(1).max(5242880),alt:z.string().min(1).max(200)}).strict(),handler:media.uploadIntent});
-routes.push({method:'POST',path:'admin/media/:id/upload',summary:'Upload validated local image bytes',permission:'catalog.write',handler:async(c,_b,p)=>media.localUpload(c,p.id)});
-routes.push({method:'POST',path:'admin/media/:id/complete',summary:'Verify and complete owned image upload',permission:'catalog.write',handler:async(c,_b,p)=>media.completeUpload(c,p.id)});
-routes.push({method:'GET',path:'media/:id',summary:'Read approved public local image',handler:async(c,_b,p)=>media.publicMedia(c,p.id)});
-routes.push({method:'PATCH',path:'cart',summary:'Validate charge currency and reprice cart',schema:z.object({currency:z.literal('LKR'),expectedVersion:z.number().int().positive()}).strict(),handler:async(c,b)=>transaction(async tx=>{const current=await cart.currentCart(tx,c);requireThat(current.version===b.expectedVersion,'CART_VERSION_CONFLICT','Your cart changed.',409);await tx.cart.update({where:{id:current.id},data:{currency:'LKR',version:{increment:1}}});return cart.cartView(tx,current.id);})});
-routes.push({method:'PATCH',path:'me/addresses/:id',summary:'Update owned address without changing order snapshots',authenticated:true,schema:addressBook,handler:async(c,b,p)=>transaction(async tx=>{found(await tx.address.findFirst({where:{id:p.id,userId:c.userId}}));if(b.isDefault)await tx.address.updateMany({where:{userId:c.userId},data:{isDefault:false}});return tx.address.update({where:{id:p.id},data:{label:String(b.label),address:dataJson(b.address),isDefault:Boolean(b.isDefault)}});})});
-routes.push({method:'PATCH',path:'admin/shipping-methods/:id',summary:'Version delivery service rules',permission:'settings.manage',schema:shipping.extend({version:z.number().int().positive()}),handler:async(c,b,p)=>transaction(async tx=>{const old=found(await tx.shippingMethod.findUnique({where:{id:p.id}}));requireThat(old.version===b.version,'VERSION_CONFLICT','Delivery method changed.',409);const {version:_version,...values}=b;const v=shipping.parse(values);const result=await tx.shippingMethod.update({where:{id:p.id},data:{...v,priceMinor:BigInt(v.priceMinor),version:{increment:1}}});await audit(tx,c,'shipping.update',p.id);return result;})});
-routes.push({method:'PATCH',path:'admin/discounts/:id',summary:'Version promotion eligibility rules',permission:'promotions.manage',schema:promotion.safeExtend({version:z.number().int().positive()}),handler:async(c,b,p)=>transaction(async tx=>{const old=found(await tx.promotion.findUnique({where:{id:p.id}}));requireThat(old.version===b.version,'VERSION_CONFLICT','Promotion changed.',409);const {version:_version,...values}=b;const v=promotion.parse(values);const result=await tx.promotion.update({where:{id:p.id},data:{...v,amountMinor:v.amountMinor?BigInt(v.amountMinor):null,minimumMinor:BigInt(v.minimumMinor),maximumMinor:v.maximumMinor?BigInt(v.maximumMinor):null,startsAt:new Date(v.startsAt),endsAt:new Date(v.endsAt),version:{increment:1}}});await audit(tx,c,'promotion.update',p.id);return result;})});
+routes.push({
+  method: 'POST',
+  path: 'admin/media/upload-intents',
+  summary: 'Authorize bounded image upload',
+  permission: 'catalog.write',
+  schema: z
+    .object({
+      mime: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+      size: z.number().int().min(1).max(5242880),
+      alt: z.string().min(1).max(200),
+    })
+    .strict(),
+  handler: media.uploadIntent,
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/media/:id/upload',
+  summary: 'Upload validated local image bytes',
+  permission: 'catalog.write',
+  handler: async (c, _b, p) => media.localUpload(c, p.id),
+});
+routes.push({
+  method: 'POST',
+  path: 'admin/media/:id/complete',
+  summary: 'Verify and complete owned image upload',
+  permission: 'catalog.write',
+  handler: async (c, _b, p) => media.completeUpload(c, p.id),
+});
+routes.push({
+  method: 'GET',
+  path: 'media/:id',
+  summary: 'Read approved public local image',
+  handler: async (c, _b, p) => media.publicMedia(c, p.id),
+});
+routes.push({
+  method: 'PATCH',
+  path: 'cart',
+  summary: 'Validate charge currency and reprice cart',
+  schema: z
+    .object({ currency: z.literal('LKR'), expectedVersion: z.number().int().positive() })
+    .strict(),
+  handler: async (c, b) =>
+    transaction(async (tx) => {
+      const current = await cart.currentCart(tx, c);
+      requireThat(
+        current.version === b.expectedVersion,
+        'CART_VERSION_CONFLICT',
+        'Your cart changed.',
+        409,
+      );
+      await tx.cart.update({
+        where: { id: current.id },
+        data: { currency: 'LKR', version: { increment: 1 } },
+      });
+      return cart.cartView(tx, current.id);
+    }),
+});
+routes.push({
+  method: 'PATCH',
+  path: 'me/addresses/:id',
+  summary: 'Update owned address without changing order snapshots',
+  authenticated: true,
+  schema: addressBook,
+  handler: async (c, b, p) =>
+    transaction(async (tx) => {
+      found(await tx.address.findFirst({ where: { id: p.id, userId: c.userId } }));
+      if (b.isDefault)
+        await tx.address.updateMany({ where: { userId: c.userId }, data: { isDefault: false } });
+      return tx.address.update({
+        where: { id: p.id },
+        data: {
+          label: String(b.label),
+          address: dataJson(b.address),
+          isDefault: Boolean(b.isDefault),
+        },
+      });
+    }),
+});
+routes.push({
+  method: 'PATCH',
+  path: 'admin/shipping-methods/:id',
+  summary: 'Version delivery service rules',
+  permission: 'settings.manage',
+  schema: shipping.extend({ version: z.number().int().positive() }),
+  handler: async (c, b, p) =>
+    transaction(async (tx) => {
+      const old = found(await tx.shippingMethod.findUnique({ where: { id: p.id } }));
+      requireThat(old.version === b.version, 'VERSION_CONFLICT', 'Delivery method changed.', 409);
+      const { version: _version, ...values } = b;
+      const v = shipping.parse(values);
+      const result = await tx.shippingMethod.update({
+        where: { id: p.id },
+        data: { ...v, priceMinor: BigInt(v.priceMinor), version: { increment: 1 } },
+      });
+      await audit(tx, c, 'shipping.update', p.id);
+      return result;
+    }),
+});
+routes.push({
+  method: 'PATCH',
+  path: 'admin/discounts/:id',
+  summary: 'Version promotion eligibility rules',
+  permission: 'promotions.manage',
+  schema: promotion.safeExtend({ version: z.number().int().positive() }),
+  handler: async (c, b, p) =>
+    transaction(async (tx) => {
+      const old = found(await tx.promotion.findUnique({ where: { id: p.id } }));
+      requireThat(old.version === b.version, 'VERSION_CONFLICT', 'Promotion changed.', 409);
+      const { version: _version, ...values } = b;
+      const v = promotion.parse(values);
+      const result = await tx.promotion.update({
+        where: { id: p.id },
+        data: {
+          ...v,
+          amountMinor: v.amountMinor ? BigInt(v.amountMinor) : null,
+          minimumMinor: BigInt(v.minimumMinor),
+          maximumMinor: v.maximumMinor ? BigInt(v.maximumMinor) : null,
+          startsAt: new Date(v.startsAt),
+          endsAt: new Date(v.endsAt),
+          version: { increment: 1 },
+        },
+      });
+      await audit(tx, c, 'promotion.update', p.id);
+      return result;
+    }),
+});
 
-import {reconcileRefund} from './modules/refunds.js';
-routes.push({method:'POST',path:'admin/refunds/:id/reconciliation',summary:'Record finance-verified refund outcome',permission:'refunds.issue',schema:z.object({status:z.enum(['SUCCEEDED','FAILED']),providerReference:z.string().regex(/^\d+$/).optional(),evidence:z.string().min(20).max(2000)}).strict().refine(v=>v.status!=='SUCCEEDED'||Boolean(v.providerReference),'Successful refunds require the verified provider reference'),handler:async(c,b,p)=>reconcileRefund(c,p.id,b)});
+import { reconcileRefund } from './modules/refunds.js';
+routes.push({
+  method: 'POST',
+  path: 'admin/refunds/:id/reconciliation',
+  summary: 'Record finance-verified refund outcome',
+  permission: 'refunds.issue',
+  schema: z
+    .object({
+      status: z.enum(['SUCCEEDED', 'FAILED']),
+      providerReference: z.string().regex(/^\d+$/).optional(),
+      evidence: z.string().min(20).max(2000),
+    })
+    .strict()
+    .refine(
+      (v) => v.status !== 'SUCCEEDED' || Boolean(v.providerReference),
+      'Successful refunds require the verified provider reference',
+    ),
+  handler: async (c, b, p) => reconcileRefund(c, p.id, b),
+});

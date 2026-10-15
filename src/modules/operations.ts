@@ -1,17 +1,557 @@
-import {transaction,dataJson,type Tx} from '../database/db.js';
-import type {Context} from '../common/context.js';
-import {found,requireThat} from '../common/problem.js';
-import {audit,event} from '../common/audit.js';
-import {idempotent} from '../common/idempotency.js';
-import {move} from './checkout.js';
-import {allocate,fx} from '../common/money.js';
-export async function adjustStock(ctx:Context,input:Record<string,unknown>){return transaction(tx=>idempotent(tx,'stock',ctx.actor,ctx.req.header('Idempotency-Key'),input,async()=>{const warehouse=found(await tx.warehouse.findFirst({where:{active:true}}));const variantId=String(input.variantId);found(await tx.variant.findUnique({where:{id:variantId}}));await tx.inventoryBalance.upsert({where:{variantId_warehouseId:{variantId,warehouseId:warehouse.id}},create:{variantId,warehouseId:warehouse.id},update:{}});await move(tx,variantId,warehouse.id,Number(input.delta),0,'ADJUSTMENT',ctx.req.header('Idempotency-Key')!,ctx.actor,'adjust:'+ctx.req.header('Idempotency-Key'),String(input.reason));await audit(tx,ctx,'inventory.adjust',variantId,{delta:input.delta,reason:input.reason});return tx.inventoryBalance.findUnique({where:{variantId_warehouseId:{variantId,warehouseId:warehouse.id}}});}));}
-export async function createPurchase(ctx:Context,input:Record<string,unknown>){return transaction(async tx=>{const supplier=found(await tx.supplier.findFirst({where:{id:String(input.supplierId),archived:false}}));const lines=input.lines as {variantId:string;quantity:number;unitCostMinor:string}[];const po=await tx.purchaseOrder.create({data:{reference:'PO-'+crypto.randomUUID().slice(0,8).toUpperCase(),supplierId:supplier.id,currency:String(input.currency),lines:{create:lines.map(l=>({...l,unitCostMinor:BigInt(l.unitCostMinor)}))}},include:{lines:true}});await audit(tx,ctx,'purchase.create',po.id);return po;});}
-export async function receivePurchase(ctx:Context,id:string,input:Record<string,unknown>){return transaction(tx=>idempotent(tx,'receipt:'+id,ctx.actor,ctx.req.header('Idempotency-Key'),input,async()=>{const po=found(await tx.purchaseOrder.findUnique({where:{id},include:{lines:true}}));requireThat(['ORDERED','PARTIALLY_RECEIVED'].includes(po.status),'PURCHASE_CLOSED','This purchase cannot receive stock.',409);const lines=input.lines as {purchaseLineId:string;quantity:number}[];requireThat(new Set(lines.map(l=>l.purchaseLineId)).size===lines.length,'DUPLICATE_LINE','Each line can appear once.');const costs=lines.map(l=>{const original=found(po.lines.find(p=>p.id===l.purchaseLineId));requireThat(l.quantity<=original.quantity-original.received,'OVER_RECEIPT','Receipt exceeds the ordered quantity.');return fx(original.unitCostMinor*BigInt(l.quantity),String(input.fxRate));});const charges=BigInt(String(input.chargesMinor));const shares=allocate(charges,costs);const receipt=await tx.goodsReceipt.create({data:{purchaseId:id,operationKey:ctx.req.header('Idempotency-Key')!,fxRate:String(input.fxRate),chargesMinor:charges}});const warehouse=found(await tx.warehouse.findFirst({where:{active:true}}));for(const [i,l] of lines.entries()){const original=found(po.lines.find(p=>p.id===l.purchaseLineId));await tx.receiptLine.create({data:{receiptId:receipt.id,purchaseLineId:original.id,variantId:original.variantId,quantity:l.quantity,purchaseTotalMinor:original.unitCostMinor*BigInt(l.quantity),baseTotalMinor:costs[i],allocatedChargeMinor:shares[i],unitLandedMinor:(costs[i]+shares[i]+BigInt(l.quantity)/2n)/BigInt(l.quantity)}});await tx.purchaseLine.update({where:{id:original.id},data:{received:{increment:l.quantity}}});await tx.inventoryBalance.upsert({where:{variantId_warehouseId:{variantId:original.variantId,warehouseId:warehouse.id}},create:{variantId:original.variantId,warehouseId:warehouse.id},update:{}});await move(tx,original.variantId,warehouse.id,l.quantity,0,'RECEIPT',receipt.id,ctx.actor,'receipt:'+receipt.id+':'+original.id);}const remaining=await tx.purchaseLine.findMany({where:{purchaseId:id}});await tx.purchaseOrder.update({where:{id},data:{status:remaining.every(l=>l.received===l.quantity)?'RECEIVED':'PARTIALLY_RECEIVED'}});await audit(tx,ctx,'purchase.receive',receipt.id,{purchaseId:id});return receipt;}));}
-export async function createShipment(ctx:Context,id:string,input:Record<string,unknown>){return transaction(tx=>idempotent(tx,'shipment:'+id,ctx.actor,ctx.req.header('Idempotency-Key'),input,async()=>{const o=found(await tx.order.findUnique({where:{id},include:{lines:{include:{shipmentItems:{include:{shipment:true}}}}}}));requireThat(o.paymentSummary==='PAID'&&o.financialFlag==='NONE'&&!o.fulfillmentException,'FULFILLMENT_BLOCKED','Payment or reconciliation prevents fulfillment.',409);const items=input.items as {orderLineId:string;quantity:number}[];requireThat(new Set(items.map(i=>i.orderLineId)).size===items.length,'DUPLICATE_LINE','Each line can appear once.');for(const i of items){const l=found(o.lines.find(l=>l.id===i.orderLineId));const allocated=l.shipmentItems.filter(s=>s.shipment.status!=='CANCELLED').reduce((s,x)=>s+x.quantity,0);requireThat(i.quantity<=l.quantity-l.cancelled-allocated,'OVER_FULFILLMENT','Quantity already allocated or cancelled.',409);}const shipment=await tx.shipment.create({data:{orderId:id,carrier:String(input.carrier),trackingNumber:String(input.trackingNumber),costMinor:input.costMinor?BigInt(String(input.costMinor)):null,operationKey:ctx.req.header('Idempotency-Key')!,items:{create:items}},include:{items:true}});await audit(tx,ctx,'shipment.create',shipment.id);return shipment;}));}
-export async function dispatch(ctx:Context,id:string){return transaction(async tx=>{const shipment=found(await tx.shipment.findUnique({where:{id},include:{items:true,order:true}}));if(shipment.status==='DISPATCHED')return shipment;requireThat(shipment.status==='READY'&&shipment.order.paymentSummary==='PAID'&&shipment.order.financialFlag==='NONE'&&!shipment.order.fulfillmentException,'DISPATCH_BLOCKED','Shipment is not ready for dispatch.',409);for(const item of shipment.items){const reservations=await tx.reservation.findMany({where:{orderLineId:item.orderLineId,state:'ALLOCATED'},orderBy:{id:'asc'}});let needed=item.quantity;for(const r of reservations){const take=Math.min(needed,r.quantity-r.fulfilled-r.released);if(!take)continue;await move(tx,r.variantId,r.warehouseId,-take,-take,'DISPATCH',id,ctx.actor,'dispatch:'+id+':'+r.id);const closed=r.fulfilled+r.released+take===r.quantity;await tx.reservation.update({where:{id:r.id},data:{fulfilled:{increment:take},...(closed?{state:'CLOSED',closeReason:'FULFILLED'}:{})}});needed-=take;}requireThat(needed===0,'ALLOCATION_MISSING','Shipment stock allocation is incomplete.',409);await tx.orderLine.update({where:{id:item.orderLineId},data:{dispatched:{increment:item.quantity}}});}const result=await tx.shipment.update({where:{id},data:{status:'DISPATCHED',dispatchedAt:new Date()}});await updateFulfillment(tx,shipment.orderId);await audit(tx,ctx,'shipment.dispatch',id);await event(tx,'ORDER_SHIPPED',shipment.orderId,{orderId:shipment.orderId,shipmentId:id},'ship:'+id);return result;});}
-export async function updateFulfillment(tx:Tx,id:string){const lines=await tx.orderLine.findMany({where:{orderId:id}});const done=lines.every(l=>l.dispatched+l.cancelled===l.quantity);const some=lines.some(l=>l.dispatched>0);await tx.order.update({where:{id},data:{status:done?(some?'COMPLETED':'CANCELLED'):some?'PROCESSING':'CONFIRMED',fulfillmentSummary:done&&some?'FULFILLED':some?'PARTIALLY_FULFILLED':'UNFULFILLED'}});}
-export async function requestRefund(ctx:Context,id:string,input:Record<string,unknown>){return transaction(tx=>idempotent(tx,'refund:'+id,ctx.actor,ctx.req.header('Idempotency-Key'),input,async()=>{const o=found(await tx.order.findUnique({where:{id},include:{transactions:true,refunds:true,lines:true}}));requireThat(o.financialFlag!=='DISPUTED','REFUND_BLOCKED','A disputed payment requires reconciliation.',409);const amount=BigInt(String(input.amountMinor));const funds=o.transactions.reduce((s,t)=>s+(t.kind==='CAPTURE'?t.amountMinor:t.kind==='REFUND'||t.kind==='CHARGEBACK'?-t.amountMinor:0n),0n);const pending=o.refunds.filter(r=>['REQUESTED','SUBMITTED','UNKNOWN'].includes(r.status)).reduce((s,r)=>s+r.amountMinor,0n);requireThat(amount<=funds-pending,'REFUND_LIMIT','Refund exceeds available captured funds.',409);const allocations=input.allocations as {orderLineId?:string;amountMinor:string;kind:string}[];requireThat(allocations.reduce((s,a)=>s+BigInt(a.amountMinor),0n)===amount,'REFUND_ALLOCATION','Allocations must equal the refund amount.');for(const a of allocations)if(a.orderLineId)found(o.lines.find(l=>l.id===a.orderLineId));const capture=o.transactions.filter(t=>t.kind==='CAPTURE').find(t=>{const used=o.transactions.filter(x=>x.kind==='REFUND'&&(x.originalId===t.id||(!x.originalId&&x.attemptId===t.attemptId))).reduce((s,x)=>s+x.amountMinor,0n);const held=o.refunds.filter(r=>(r.captureId===t.id||(!r.captureId&&r.attemptId===t.attemptId))&&['REQUESTED','SUBMITTED','UNKNOWN'].includes(r.status)).reduce((s,r)=>s+r.amountMinor,0n);return t.amountMinor-used-held>=amount;});requireThat(capture,'CAPTURE_REFUND_LIMIT','Split this refund into amounts covered by individual captures.',409);const refund=await tx.refund.create({data:{orderId:id,attemptId:capture.attemptId,captureId:capture.id,amountMinor:amount,currency:o.currency,reason:String(input.reason),allocations:dataJson(allocations),operationKey:ctx.req.header('Idempotency-Key')!}});await audit(tx,ctx,'refund.request',refund.id,{amountMinor:String(amount)});await event(tx,'REFUND_REQUESTED',refund.id,{refundId:refund.id});return refund;}));}
-export async function decideRequest(ctx:Context,id:string,input:Record<string,unknown>){return transaction(async tx=>{const r=found(await tx.serviceRequest.findUnique({where:{id},include:{order:{include:{lines:{include:{reservations:true,shipmentItems:{include:{shipment:true}}}}}}}}));requireThat(r.status==='REQUESTED','REQUEST_DECIDED','Request already decided.',409);const approve=input.decision==='APPROVED';if(approve&&r.kind==='CANCELLATION'){for(const item of r.items as {orderLineId:string;quantity:number}[]){const line=found(r.order.lines.find(l=>l.id===item.orderLineId));requireThat(item.quantity<=line.quantity-line.dispatched-line.cancelled&&!line.shipmentItems.some(i=>i.shipment.status==='READY'),'CANCELLATION_BLOCKED','Cancel allocated shipments before cancelling these pieces.',409);let remaining=item.quantity;for(const hold of line.reservations.filter(h=>h.state!=='CLOSED')){const release=Math.min(remaining,hold.quantity-hold.fulfilled-hold.released);if(release){await move(tx,hold.variantId,hold.warehouseId,0,-release,'CANCEL',r.id,ctx.actor,'cancel:'+r.id+':'+hold.id);await tx.reservation.update({where:{id:hold.id},data:{released:{increment:release},...(hold.fulfilled+hold.released+release===hold.quantity?{state:'CLOSED',closeReason:'CANCELLED'}:{})}});remaining-=release;}}await tx.orderLine.update({where:{id:line.id},data:{cancelled:{increment:item.quantity}}});}await updateFulfillment(tx,r.orderId);if(r.order.paymentSummary!=='UNPAID')await tx.reconciliationIssue.create({data:{orderId:r.orderId,code:'CANCEL_REFUND_REQUIRED',evidence:{requestId:r.id},dueAt:new Date(Date.now()+86400000)}});}const result=await tx.serviceRequest.update({where:{id},data:{status:approve?(r.kind==='RETURN'?'AUTHORIZED':'CLOSED'):'REJECTED',decisionReason:String(input.reason)}});await audit(tx,ctx,'request.decide',id,{decision:input.decision});return result;});}
-export async function inspectReturn(ctx:Context,id:string,input:Record<string,unknown>){return transaction(tx=>idempotent(tx,'return-receipt:'+id,ctx.actor,ctx.req.header('Idempotency-Key'),input,async()=>{const r=found(await tx.serviceRequest.findUnique({where:{id},include:{order:{include:{lines:true}}}}));requireThat(r.kind==='RETURN'&&r.status==='AUTHORIZED','RETURN_NOT_AUTHORIZED','Authorize this return first.',409);const items=input.items as {orderLineId:string;received:number;restock:number;condition:string}[];requireThat(new Set(items.map(i=>i.orderLineId)).size===items.length,'DUPLICATE_LINE','Each line can appear once.');const warehouse=found(await tx.warehouse.findFirst({where:{active:true}}));for(const item of items){const requested=found((r.items as {orderLineId:string;quantity:number}[]).find(i=>i.orderLineId===item.orderLineId));const line=found(r.order.lines.find(l=>l.id===item.orderLineId));requireThat(item.received<=requested.quantity&&item.restock<=item.received&&item.received<=line.dispatched-line.returned,'RETURN_LIMIT','Return quantities exceed eligible pieces.');await tx.orderLine.update({where:{id:line.id},data:{returned:{increment:item.received}}});if(item.restock)await move(tx,line.variantId,warehouse.id,item.restock,0,'RETURN',r.id,ctx.actor,'return:'+r.id+':'+line.id);}const result=await tx.serviceRequest.update({where:{id},data:{status:'CLOSED',inspection:dataJson(items)}});await tx.reconciliationIssue.create({data:{orderId:r.orderId,code:'RETURN_REFUND_REVIEW',evidence:{requestId:id},dueAt:new Date(Date.now()+86400000)}});await audit(tx,ctx,'return.inspect',id);return result;}));}
-
+import { transaction, dataJson, type Tx } from '../database/db.js';
+import type { Context } from '../common/context.js';
+import { found, requireThat } from '../common/problem.js';
+import { audit, event } from '../common/audit.js';
+import { idempotent } from '../common/idempotency.js';
+import { move } from './checkout.js';
+import { allocate, fx } from '../common/money.js';
+export async function adjustStock(ctx: Context, input: Record<string, unknown>) {
+  return transaction((tx) =>
+    idempotent(tx, 'stock', ctx.actor, ctx.req.header('Idempotency-Key'), input, async () => {
+      const warehouse = found(await tx.warehouse.findFirst({ where: { active: true } }));
+      const variantId = String(input.variantId);
+      found(await tx.variant.findUnique({ where: { id: variantId } }));
+      await tx.inventoryBalance.upsert({
+        where: { variantId_warehouseId: { variantId, warehouseId: warehouse.id } },
+        create: { variantId, warehouseId: warehouse.id },
+        update: {},
+      });
+      await move(
+        tx,
+        variantId,
+        warehouse.id,
+        Number(input.delta),
+        0,
+        'ADJUSTMENT',
+        ctx.req.header('Idempotency-Key')!,
+        ctx.actor,
+        'adjust:' + ctx.req.header('Idempotency-Key'),
+        String(input.reason),
+      );
+      await audit(tx, ctx, 'inventory.adjust', variantId, {
+        delta: input.delta,
+        reason: input.reason,
+      });
+      return tx.inventoryBalance.findUnique({
+        where: { variantId_warehouseId: { variantId, warehouseId: warehouse.id } },
+      });
+    }),
+  );
+}
+export async function createPurchase(ctx: Context, input: Record<string, unknown>) {
+  return transaction(async (tx) => {
+    const supplier = found(
+      await tx.supplier.findFirst({ where: { id: String(input.supplierId), archived: false } }),
+    );
+    const lines = input.lines as { variantId: string; quantity: number; unitCostMinor: string }[];
+    const po = await tx.purchaseOrder.create({
+      data: {
+        reference: 'PO-' + crypto.randomUUID().slice(0, 8).toUpperCase(),
+        supplierId: supplier.id,
+        currency: String(input.currency),
+        lines: { create: lines.map((l) => ({ ...l, unitCostMinor: BigInt(l.unitCostMinor) })) },
+      },
+      include: { lines: true },
+    });
+    await audit(tx, ctx, 'purchase.create', po.id);
+    return po;
+  });
+}
+export async function receivePurchase(ctx: Context, id: string, input: Record<string, unknown>) {
+  return transaction((tx) =>
+    idempotent(
+      tx,
+      'receipt:' + id,
+      ctx.actor,
+      ctx.req.header('Idempotency-Key'),
+      input,
+      async () => {
+        const po = found(
+          await tx.purchaseOrder.findUnique({ where: { id }, include: { lines: true } }),
+        );
+        requireThat(
+          ['ORDERED', 'PARTIALLY_RECEIVED'].includes(po.status),
+          'PURCHASE_CLOSED',
+          'This purchase cannot receive stock.',
+          409,
+        );
+        const lines = input.lines as { purchaseLineId: string; quantity: number }[];
+        requireThat(
+          new Set(lines.map((l) => l.purchaseLineId)).size === lines.length,
+          'DUPLICATE_LINE',
+          'Each line can appear once.',
+        );
+        const costs = lines.map((l) => {
+          const original = found(po.lines.find((p) => p.id === l.purchaseLineId));
+          requireThat(
+            l.quantity <= original.quantity - original.received,
+            'OVER_RECEIPT',
+            'Receipt exceeds the ordered quantity.',
+          );
+          return fx(original.unitCostMinor * BigInt(l.quantity), String(input.fxRate));
+        });
+        const charges = BigInt(String(input.chargesMinor));
+        const shares = allocate(charges, costs);
+        const receipt = await tx.goodsReceipt.create({
+          data: {
+            purchaseId: id,
+            operationKey: ctx.req.header('Idempotency-Key')!,
+            fxRate: String(input.fxRate),
+            chargesMinor: charges,
+          },
+        });
+        const warehouse = found(await tx.warehouse.findFirst({ where: { active: true } }));
+        for (const [i, l] of lines.entries()) {
+          const original = found(po.lines.find((p) => p.id === l.purchaseLineId));
+          await tx.receiptLine.create({
+            data: {
+              receiptId: receipt.id,
+              purchaseLineId: original.id,
+              variantId: original.variantId,
+              quantity: l.quantity,
+              purchaseTotalMinor: original.unitCostMinor * BigInt(l.quantity),
+              baseTotalMinor: costs[i],
+              allocatedChargeMinor: shares[i],
+              unitLandedMinor:
+                (costs[i] + shares[i] + BigInt(l.quantity) / 2n) / BigInt(l.quantity),
+            },
+          });
+          await tx.purchaseLine.update({
+            where: { id: original.id },
+            data: { received: { increment: l.quantity } },
+          });
+          await tx.inventoryBalance.upsert({
+            where: {
+              variantId_warehouseId: { variantId: original.variantId, warehouseId: warehouse.id },
+            },
+            create: { variantId: original.variantId, warehouseId: warehouse.id },
+            update: {},
+          });
+          await move(
+            tx,
+            original.variantId,
+            warehouse.id,
+            l.quantity,
+            0,
+            'RECEIPT',
+            receipt.id,
+            ctx.actor,
+            'receipt:' + receipt.id + ':' + original.id,
+          );
+        }
+        const remaining = await tx.purchaseLine.findMany({ where: { purchaseId: id } });
+        await tx.purchaseOrder.update({
+          where: { id },
+          data: {
+            status: remaining.every((l) => l.received === l.quantity)
+              ? 'RECEIVED'
+              : 'PARTIALLY_RECEIVED',
+          },
+        });
+        await audit(tx, ctx, 'purchase.receive', receipt.id, { purchaseId: id });
+        return receipt;
+      },
+    ),
+  );
+}
+export async function createShipment(ctx: Context, id: string, input: Record<string, unknown>) {
+  return transaction((tx) =>
+    idempotent(
+      tx,
+      'shipment:' + id,
+      ctx.actor,
+      ctx.req.header('Idempotency-Key'),
+      input,
+      async () => {
+        const o = found(
+          await tx.order.findUnique({
+            where: { id },
+            include: { lines: { include: { shipmentItems: { include: { shipment: true } } } } },
+          }),
+        );
+        requireThat(
+          o.paymentSummary === 'PAID' && o.financialFlag === 'NONE' && !o.fulfillmentException,
+          'FULFILLMENT_BLOCKED',
+          'Payment or reconciliation prevents fulfillment.',
+          409,
+        );
+        const items = input.items as { orderLineId: string; quantity: number }[];
+        requireThat(
+          new Set(items.map((i) => i.orderLineId)).size === items.length,
+          'DUPLICATE_LINE',
+          'Each line can appear once.',
+        );
+        for (const i of items) {
+          const l = found(o.lines.find((l) => l.id === i.orderLineId));
+          const allocated = l.shipmentItems
+            .filter((s) => s.shipment.status !== 'CANCELLED')
+            .reduce((s, x) => s + x.quantity, 0);
+          requireThat(
+            i.quantity <= l.quantity - l.cancelled - allocated,
+            'OVER_FULFILLMENT',
+            'Quantity already allocated or cancelled.',
+            409,
+          );
+        }
+        const shipment = await tx.shipment.create({
+          data: {
+            orderId: id,
+            carrier: String(input.carrier),
+            trackingNumber: String(input.trackingNumber),
+            costMinor: input.costMinor ? BigInt(String(input.costMinor)) : null,
+            operationKey: ctx.req.header('Idempotency-Key')!,
+            items: { create: items },
+          },
+          include: { items: true },
+        });
+        await audit(tx, ctx, 'shipment.create', shipment.id);
+        return shipment;
+      },
+    ),
+  );
+}
+export async function dispatch(ctx: Context, id: string) {
+  return transaction(async (tx) => {
+    const shipment = found(
+      await tx.shipment.findUnique({ where: { id }, include: { items: true, order: true } }),
+    );
+    if (shipment.status === 'DISPATCHED') return shipment;
+    requireThat(
+      shipment.status === 'READY' &&
+        shipment.order.paymentSummary === 'PAID' &&
+        shipment.order.financialFlag === 'NONE' &&
+        !shipment.order.fulfillmentException,
+      'DISPATCH_BLOCKED',
+      'Shipment is not ready for dispatch.',
+      409,
+    );
+    for (const item of shipment.items) {
+      const reservations = await tx.reservation.findMany({
+        where: { orderLineId: item.orderLineId, state: 'ALLOCATED' },
+        orderBy: { id: 'asc' },
+      });
+      let needed = item.quantity;
+      for (const r of reservations) {
+        const take = Math.min(needed, r.quantity - r.fulfilled - r.released);
+        if (!take) continue;
+        await move(
+          tx,
+          r.variantId,
+          r.warehouseId,
+          -take,
+          -take,
+          'DISPATCH',
+          id,
+          ctx.actor,
+          'dispatch:' + id + ':' + r.id,
+        );
+        const closed = r.fulfilled + r.released + take === r.quantity;
+        await tx.reservation.update({
+          where: { id: r.id },
+          data: {
+            fulfilled: { increment: take },
+            ...(closed ? { state: 'CLOSED', closeReason: 'FULFILLED' } : {}),
+          },
+        });
+        needed -= take;
+      }
+      requireThat(
+        needed === 0,
+        'ALLOCATION_MISSING',
+        'Shipment stock allocation is incomplete.',
+        409,
+      );
+      await tx.orderLine.update({
+        where: { id: item.orderLineId },
+        data: { dispatched: { increment: item.quantity } },
+      });
+    }
+    const result = await tx.shipment.update({
+      where: { id },
+      data: { status: 'DISPATCHED', dispatchedAt: new Date() },
+    });
+    await updateFulfillment(tx, shipment.orderId);
+    await audit(tx, ctx, 'shipment.dispatch', id);
+    await event(
+      tx,
+      'ORDER_SHIPPED',
+      shipment.orderId,
+      { orderId: shipment.orderId, shipmentId: id },
+      'ship:' + id,
+    );
+    return result;
+  });
+}
+export async function updateFulfillment(tx: Tx, id: string) {
+  const lines = await tx.orderLine.findMany({ where: { orderId: id } });
+  const done = lines.every((l) => l.dispatched + l.cancelled === l.quantity);
+  const some = lines.some((l) => l.dispatched > 0);
+  await tx.order.update({
+    where: { id },
+    data: {
+      status: done ? (some ? 'COMPLETED' : 'CANCELLED') : some ? 'PROCESSING' : 'CONFIRMED',
+      fulfillmentSummary: done && some ? 'FULFILLED' : some ? 'PARTIALLY_FULFILLED' : 'UNFULFILLED',
+    },
+  });
+}
+export async function requestRefund(ctx: Context, id: string, input: Record<string, unknown>) {
+  return transaction((tx) =>
+    idempotent(
+      tx,
+      'refund:' + id,
+      ctx.actor,
+      ctx.req.header('Idempotency-Key'),
+      input,
+      async () => {
+        const o = found(
+          await tx.order.findUnique({
+            where: { id },
+            include: { transactions: true, refunds: true, lines: true },
+          }),
+        );
+        requireThat(
+          o.financialFlag !== 'DISPUTED',
+          'REFUND_BLOCKED',
+          'A disputed payment requires reconciliation.',
+          409,
+        );
+        const amount = BigInt(String(input.amountMinor));
+        const funds = o.transactions.reduce(
+          (s, t) =>
+            s +
+            (t.kind === 'CAPTURE'
+              ? t.amountMinor
+              : t.kind === 'REFUND' || t.kind === 'CHARGEBACK'
+                ? -t.amountMinor
+                : 0n),
+          0n,
+        );
+        const pending = o.refunds
+          .filter((r) => ['REQUESTED', 'SUBMITTED', 'UNKNOWN'].includes(r.status))
+          .reduce((s, r) => s + r.amountMinor, 0n);
+        requireThat(
+          amount <= funds - pending,
+          'REFUND_LIMIT',
+          'Refund exceeds available captured funds.',
+          409,
+        );
+        const allocations = input.allocations as {
+          orderLineId?: string;
+          amountMinor: string;
+          kind: string;
+        }[];
+        requireThat(
+          allocations.reduce((s, a) => s + BigInt(a.amountMinor), 0n) === amount,
+          'REFUND_ALLOCATION',
+          'Allocations must equal the refund amount.',
+        );
+        for (const a of allocations)
+          if (a.orderLineId) found(o.lines.find((l) => l.id === a.orderLineId));
+        const capture = o.transactions
+          .filter((t) => t.kind === 'CAPTURE')
+          .find((t) => {
+            const used = o.transactions
+              .filter(
+                (x) =>
+                  x.kind === 'REFUND' &&
+                  (x.originalId === t.id || (!x.originalId && x.attemptId === t.attemptId)),
+              )
+              .reduce((s, x) => s + x.amountMinor, 0n);
+            const held = o.refunds
+              .filter(
+                (r) =>
+                  (r.captureId === t.id || (!r.captureId && r.attemptId === t.attemptId)) &&
+                  ['REQUESTED', 'SUBMITTED', 'UNKNOWN'].includes(r.status),
+              )
+              .reduce((s, r) => s + r.amountMinor, 0n);
+            return t.amountMinor - used - held >= amount;
+          });
+        requireThat(
+          capture,
+          'CAPTURE_REFUND_LIMIT',
+          'Split this refund into amounts covered by individual captures.',
+          409,
+        );
+        const refund = await tx.refund.create({
+          data: {
+            orderId: id,
+            attemptId: capture.attemptId,
+            captureId: capture.id,
+            amountMinor: amount,
+            currency: o.currency,
+            reason: String(input.reason),
+            allocations: dataJson(allocations),
+            operationKey: ctx.req.header('Idempotency-Key')!,
+          },
+        });
+        await audit(tx, ctx, 'refund.request', refund.id, { amountMinor: String(amount) });
+        await event(tx, 'REFUND_REQUESTED', refund.id, { refundId: refund.id });
+        return refund;
+      },
+    ),
+  );
+}
+export async function decideRequest(ctx: Context, id: string, input: Record<string, unknown>) {
+  return transaction(async (tx) => {
+    const r = found(
+      await tx.serviceRequest.findUnique({
+        where: { id },
+        include: {
+          order: {
+            include: {
+              lines: {
+                include: { reservations: true, shipmentItems: { include: { shipment: true } } },
+              },
+            },
+          },
+        },
+      }),
+    );
+    requireThat(r.status === 'REQUESTED', 'REQUEST_DECIDED', 'Request already decided.', 409);
+    const approve = input.decision === 'APPROVED';
+    if (approve && r.kind === 'CANCELLATION') {
+      for (const item of r.items as { orderLineId: string; quantity: number }[]) {
+        const line = found(r.order.lines.find((l) => l.id === item.orderLineId));
+        requireThat(
+          item.quantity <= line.quantity - line.dispatched - line.cancelled &&
+            !line.shipmentItems.some((i) => i.shipment.status === 'READY'),
+          'CANCELLATION_BLOCKED',
+          'Cancel allocated shipments before cancelling these pieces.',
+          409,
+        );
+        let remaining = item.quantity;
+        for (const hold of line.reservations.filter((h) => h.state !== 'CLOSED')) {
+          const release = Math.min(remaining, hold.quantity - hold.fulfilled - hold.released);
+          if (release) {
+            await move(
+              tx,
+              hold.variantId,
+              hold.warehouseId,
+              0,
+              -release,
+              'CANCEL',
+              r.id,
+              ctx.actor,
+              'cancel:' + r.id + ':' + hold.id,
+            );
+            await tx.reservation.update({
+              where: { id: hold.id },
+              data: {
+                released: { increment: release },
+                ...(hold.fulfilled + hold.released + release === hold.quantity
+                  ? { state: 'CLOSED', closeReason: 'CANCELLED' }
+                  : {}),
+              },
+            });
+            remaining -= release;
+          }
+        }
+        await tx.orderLine.update({
+          where: { id: line.id },
+          data: { cancelled: { increment: item.quantity } },
+        });
+      }
+      await updateFulfillment(tx, r.orderId);
+      if (r.order.paymentSummary !== 'UNPAID')
+        await tx.reconciliationIssue.create({
+          data: {
+            orderId: r.orderId,
+            code: 'CANCEL_REFUND_REQUIRED',
+            evidence: { requestId: r.id },
+            dueAt: new Date(Date.now() + 86400000),
+          },
+        });
+    }
+    const result = await tx.serviceRequest.update({
+      where: { id },
+      data: {
+        status: approve ? (r.kind === 'RETURN' ? 'AUTHORIZED' : 'CLOSED') : 'REJECTED',
+        decisionReason: String(input.reason),
+      },
+    });
+    await audit(tx, ctx, 'request.decide', id, { decision: input.decision });
+    return result;
+  });
+}
+export async function inspectReturn(ctx: Context, id: string, input: Record<string, unknown>) {
+  return transaction((tx) =>
+    idempotent(
+      tx,
+      'return-receipt:' + id,
+      ctx.actor,
+      ctx.req.header('Idempotency-Key'),
+      input,
+      async () => {
+        const r = found(
+          await tx.serviceRequest.findUnique({
+            where: { id },
+            include: { order: { include: { lines: true } } },
+          }),
+        );
+        requireThat(
+          r.kind === 'RETURN' && r.status === 'AUTHORIZED',
+          'RETURN_NOT_AUTHORIZED',
+          'Authorize this return first.',
+          409,
+        );
+        const items = input.items as {
+          orderLineId: string;
+          received: number;
+          restock: number;
+          condition: string;
+        }[];
+        requireThat(
+          new Set(items.map((i) => i.orderLineId)).size === items.length,
+          'DUPLICATE_LINE',
+          'Each line can appear once.',
+        );
+        const warehouse = found(await tx.warehouse.findFirst({ where: { active: true } }));
+        for (const item of items) {
+          const requested = found(
+            (r.items as { orderLineId: string; quantity: number }[]).find(
+              (i) => i.orderLineId === item.orderLineId,
+            ),
+          );
+          const line = found(r.order.lines.find((l) => l.id === item.orderLineId));
+          requireThat(
+            item.received <= requested.quantity &&
+              item.restock <= item.received &&
+              item.received <= line.dispatched - line.returned,
+            'RETURN_LIMIT',
+            'Return quantities exceed eligible pieces.',
+          );
+          await tx.orderLine.update({
+            where: { id: line.id },
+            data: { returned: { increment: item.received } },
+          });
+          if (item.restock)
+            await move(
+              tx,
+              line.variantId,
+              warehouse.id,
+              item.restock,
+              0,
+              'RETURN',
+              r.id,
+              ctx.actor,
+              'return:' + r.id + ':' + line.id,
+            );
+        }
+        const result = await tx.serviceRequest.update({
+          where: { id },
+          data: { status: 'CLOSED', inspection: dataJson(items) },
+        });
+        await tx.reconciliationIssue.create({
+          data: {
+            orderId: r.orderId,
+            code: 'RETURN_REFUND_REVIEW',
+            evidence: { requestId: id },
+            dueAt: new Date(Date.now() + 86400000),
+          },
+        });
+        await audit(tx, ctx, 'return.inspect', id);
+        return result;
+      },
+    ),
+  );
+}

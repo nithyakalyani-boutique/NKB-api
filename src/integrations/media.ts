@@ -1,15 +1,164 @@
-import {createHash} from 'node:crypto';
-import {mkdir,writeFile,readFile} from 'node:fs/promises';
-import {resolve} from 'node:path';
-import {db,transaction} from '../database/db.js';
-import {env} from '../config/env.js';
-import type {Context} from '../common/context.js';
-import {requireThat,found} from '../common/problem.js';
-import {audit} from '../common/audit.js';
-export const acceptedMime=['image/png','image/jpeg','image/webp'];
-function cloud(){const name=process.env.CLOUDINARY_CLOUD_NAME,key=process.env.CLOUDINARY_API_KEY,secret=process.env.CLOUDINARY_API_SECRET;requireThat(name&&key&&secret,'MEDIA_UNAVAILABLE','Cloudinary is not configured.',503);return {name,key,secret};}
-export async function uploadIntent(ctx:Context,input:Record<string,unknown>){const id=crypto.randomUUID();const mime=String(input.mime);requireThat(acceptedMime.includes(mime)&&Number(input.size)>0&&Number(input.size)<=5*1024*1024,'INVALID_MEDIA','Upload a PNG, JPEG or WebP image up to 5 MB.');const providerId='nkb/'+id;const localUrl='/api/v1/media/'+id;const media=await transaction(async tx=>{const media=await tx.mediaAsset.create({data:{id,ownerId:ctx.userId!,providerId,url:localUrl,mime,size:Number(input.size),alt:String(input.alt)}});await audit(tx,ctx,'media.intent',id);return media;});if(env.MEDIA_PROVIDER==='cloudinary'){const c=cloud();const timestamp=Math.floor(Date.now()/1000);const signature=createHash('sha1').update('public_id='+providerId+'&timestamp='+timestamp+c.secret).digest('hex');return {id:media.id,provider:'cloudinary',action:'https://api.cloudinary.com/v1_1/'+encodeURIComponent(c.name)+'/image/upload',fields:{api_key:c.key,timestamp:String(timestamp),public_id:providerId,signature}};}return {id:media.id,provider:'local',action:'/api/v1/admin/media/'+id+'/upload',fields:{}};}
-export function validImage(bytes:Buffer,mime:string){if(mime==='image/png')return bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));if(mime==='image/jpeg')return bytes[0]===255&&bytes[1]===216&&bytes[bytes.length-2]===255&&bytes[bytes.length-1]===217;if(mime==='image/webp')return bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP';return false;}
-export async function localUpload(ctx:Context,id:string){requireThat(env.MEDIA_PROVIDER==='local','MEDIA_UNAVAILABLE','Local uploads are disabled.',404);const media=found(await db.mediaAsset.findFirst({where:{id,ownerId:ctx.userId,status:'PENDING'}}));const body=ctx.req.body;requireThat(Buffer.isBuffer(body)&&body.length===media.size&&body.length<=5*1024*1024&&validImage(body,media.mime),'INVALID_MEDIA','The uploaded image does not match its declared type or size.');const dir=resolve(process.env.LOCAL_MEDIA_ROOT||'.local/media');await mkdir(dir,{recursive:true});await writeFile(resolve(dir,id),body,{flag:'wx'});return {uploaded:true};}
-export async function completeUpload(ctx:Context,id:string){const media=found(await db.mediaAsset.findFirst({where:{id,ownerId:ctx.userId}}));if(media.status==='READY')return media;let url=media.url;if(env.MEDIA_PROVIDER==='cloudinary'){const c=cloud();const response=await fetch('https://api.cloudinary.com/v1_1/'+encodeURIComponent(c.name)+'/resources/image/upload/'+encodeURIComponent(media.providerId),{headers:{Authorization:'Basic '+Buffer.from(c.key+':'+c.secret).toString('base64')},signal:AbortSignal.timeout(15000)});requireThat(response.ok,'MEDIA_VERIFICATION_FAILED','The provider could not verify this image.',422);const asset=await response.json() as {public_id:string;bytes:number;format:string;secure_url:string};requireThat(asset.public_id===media.providerId&&asset.bytes<=5*1024*1024&&['png','jpg','webp'].includes(asset.format),'INVALID_MEDIA','Provider image verification failed.');url=asset.secure_url;requireThat(url.startsWith('https://res.cloudinary.com/'+c.name+'/'),'INVALID_MEDIA','Invalid provider delivery URL.');}else{const body=await readFile(resolve(process.env.LOCAL_MEDIA_ROOT||'.local/media',id));requireThat(body.length===media.size&&validImage(body,media.mime),'INVALID_MEDIA','Image validation failed.');}return transaction(async tx=>{const result=await tx.mediaAsset.update({where:{id},data:{status:'READY',url}});await audit(tx,ctx,'media.complete',id);return result;});}
-export async function publicMedia(ctx:Context,id:string){requireThat(/^[a-f0-9-]{36}$/.test(id),'NOT_FOUND','Image not found.',404);const media=found(await db.mediaAsset.findFirst({where:{id,status:'READY'}}));const bytes=await readFile(resolve(process.env.LOCAL_MEDIA_ROOT||'.local/media',id));ctx.res.setHeader('Cache-Control','public, max-age=86400, immutable');ctx.res.type(media.mime).send(bytes);return undefined;}
+import { createHash } from 'node:crypto';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { db, transaction } from '../database/db.js';
+import { env } from '../config/env.js';
+import type { Context } from '../common/context.js';
+import { requireThat, found } from '../common/problem.js';
+import { audit } from '../common/audit.js';
+export const acceptedMime = ['image/png', 'image/jpeg', 'image/webp'];
+function cloud() {
+  const name = process.env.CLOUDINARY_CLOUD_NAME,
+    key = process.env.CLOUDINARY_API_KEY,
+    secret = process.env.CLOUDINARY_API_SECRET;
+  requireThat(name && key && secret, 'MEDIA_UNAVAILABLE', 'Cloudinary is not configured.', 503);
+  return { name, key, secret };
+}
+export async function uploadIntent(ctx: Context, input: Record<string, unknown>) {
+  const id = crypto.randomUUID();
+  const mime = String(input.mime);
+  requireThat(
+    acceptedMime.includes(mime) && Number(input.size) > 0 && Number(input.size) <= 5 * 1024 * 1024,
+    'INVALID_MEDIA',
+    'Upload a PNG, JPEG or WebP image up to 5 MB.',
+  );
+  const providerId = 'nkb/' + id;
+  const localUrl = '/api/v1/media/' + id;
+  const media = await transaction(async (tx) => {
+    const media = await tx.mediaAsset.create({
+      data: {
+        id,
+        ownerId: ctx.userId!,
+        providerId,
+        url: localUrl,
+        mime,
+        size: Number(input.size),
+        alt: String(input.alt),
+      },
+    });
+    await audit(tx, ctx, 'media.intent', id);
+    return media;
+  });
+  if (env.MEDIA_PROVIDER === 'cloudinary') {
+    const c = cloud();
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = createHash('sha1')
+      .update('public_id=' + providerId + '&timestamp=' + timestamp + c.secret)
+      .digest('hex');
+    return {
+      id: media.id,
+      provider: 'cloudinary',
+      action: 'https://api.cloudinary.com/v1_1/' + encodeURIComponent(c.name) + '/image/upload',
+      fields: { api_key: c.key, timestamp: String(timestamp), public_id: providerId, signature },
+    };
+  }
+  return {
+    id: media.id,
+    provider: 'local',
+    action: '/api/v1/admin/media/' + id + '/upload',
+    fields: {},
+  };
+}
+export function validImage(bytes: Buffer, mime: string) {
+  if (mime === 'image/png')
+    return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (mime === 'image/jpeg')
+    return (
+      bytes[0] === 255 &&
+      bytes[1] === 216 &&
+      bytes[bytes.length - 2] === 255 &&
+      bytes[bytes.length - 1] === 217
+    );
+  if (mime === 'image/webp')
+    return bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
+  return false;
+}
+export async function localUpload(ctx: Context, id: string) {
+  requireThat(
+    env.MEDIA_PROVIDER === 'local',
+    'MEDIA_UNAVAILABLE',
+    'Local uploads are disabled.',
+    404,
+  );
+  const media = found(
+    await db.mediaAsset.findFirst({ where: { id, ownerId: ctx.userId, status: 'PENDING' } }),
+  );
+  const body = ctx.req.body;
+  requireThat(
+    Buffer.isBuffer(body) &&
+      body.length === media.size &&
+      body.length <= 5 * 1024 * 1024 &&
+      validImage(body, media.mime),
+    'INVALID_MEDIA',
+    'The uploaded image does not match its declared type or size.',
+  );
+  const dir = resolve(process.env.LOCAL_MEDIA_ROOT || '.local/media');
+  await mkdir(dir, { recursive: true });
+  await writeFile(resolve(dir, id), body, { flag: 'wx' });
+  return { uploaded: true };
+}
+export async function completeUpload(ctx: Context, id: string) {
+  const media = found(await db.mediaAsset.findFirst({ where: { id, ownerId: ctx.userId } }));
+  if (media.status === 'READY') return media;
+  let url = media.url;
+  if (env.MEDIA_PROVIDER === 'cloudinary') {
+    const c = cloud();
+    const response = await fetch(
+      'https://api.cloudinary.com/v1_1/' +
+        encodeURIComponent(c.name) +
+        '/resources/image/upload/' +
+        encodeURIComponent(media.providerId),
+      {
+        headers: {
+          Authorization: 'Basic ' + Buffer.from(c.key + ':' + c.secret).toString('base64'),
+        },
+        signal: AbortSignal.timeout(15000),
+      },
+    );
+    requireThat(
+      response.ok,
+      'MEDIA_VERIFICATION_FAILED',
+      'The provider could not verify this image.',
+      422,
+    );
+    const asset = (await response.json()) as {
+      public_id: string;
+      bytes: number;
+      format: string;
+      secure_url: string;
+    };
+    requireThat(
+      asset.public_id === media.providerId &&
+        asset.bytes <= 5 * 1024 * 1024 &&
+        ['png', 'jpg', 'webp'].includes(asset.format),
+      'INVALID_MEDIA',
+      'Provider image verification failed.',
+    );
+    url = asset.secure_url;
+    requireThat(
+      url.startsWith('https://res.cloudinary.com/' + c.name + '/'),
+      'INVALID_MEDIA',
+      'Invalid provider delivery URL.',
+    );
+  } else {
+    const body = await readFile(resolve(process.env.LOCAL_MEDIA_ROOT || '.local/media', id));
+    requireThat(
+      body.length === media.size && validImage(body, media.mime),
+      'INVALID_MEDIA',
+      'Image validation failed.',
+    );
+  }
+  return transaction(async (tx) => {
+    const result = await tx.mediaAsset.update({ where: { id }, data: { status: 'READY', url } });
+    await audit(tx, ctx, 'media.complete', id);
+    return result;
+  });
+}
+export async function publicMedia(ctx: Context, id: string) {
+  requireThat(/^[a-f0-9-]{36}$/.test(id), 'NOT_FOUND', 'Image not found.', 404);
+  const media = found(await db.mediaAsset.findFirst({ where: { id, status: 'READY' } }));
+  const bytes = await readFile(resolve(process.env.LOCAL_MEDIA_ROOT || '.local/media', id));
+  ctx.res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+  ctx.res.type(media.mime).send(bytes);
+  return undefined;
+}
