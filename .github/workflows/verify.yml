@@ -1,0 +1,51 @@
+name: API verification
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: nkb
+          POSTGRES_PASSWORD: nkb_ci
+          POSTGRES_DB: nkb_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U nkb" --health-interval 5s --health-retries 10
+      redis:
+        image: redis:7.4.6-alpine
+        ports: ['6379:6379']
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql://nkb:nkb_ci@localhost:5432/nkb_test
+      MIGRATION_DATABASE_URL: postgresql://nkb:nkb_ci@localhost:5432/nkb_test
+      TEST_DATABASE_URL: postgresql://nkb:nkb_ci@localhost:5432/nkb_test
+      BETTER_AUTH_SECRET: isolated-ci-secret-not-for-a-deployed-environment
+      PAYMENT_PROVIDER: fake
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: api
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+      - run: node api/scripts/restore-workspace.mjs
+      - run: npm install --global pnpm@10.34.7
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @nkb/api db:generate
+      - run: pnpm --filter @nkb/api db:migrate
+      - run: pnpm --filter @nkb/api lint && pnpm --filter @nkb/api typecheck
+      - run: pnpm --filter @nkb/api test && pnpm --filter @nkb/api test:integration
+      - run: pnpm --filter @nkb/api build
+      - name: Restore rehearsal into a separate database
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$PG_CONTAINER" pg_dump -U nkb -Fc nkb_test > /tmp/nkb-test.dump
+          docker exec "$PG_CONTAINER" createdb -U nkb nkb_restore
+          docker exec -i "$PG_CONTAINER" pg_restore --exit-on-error -U nkb -d nkb_restore < /tmp/nkb-test.dump
+          docker exec "$PG_CONTAINER" psql -U nkb -d nkb_restore -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM "PaymentTransaction";'
+      - name: Verify generated contract is committed
+        run: pnpm --filter @nkb/api api:export && git -C api diff --exit-code -- openapi.json
